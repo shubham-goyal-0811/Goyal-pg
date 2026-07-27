@@ -1,0 +1,265 @@
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { api } from '../../lib/api'
+import toast from 'react-hot-toast'
+import { Loader2, UploadCloud, CheckCircle } from 'lucide-react'
+
+const OnboardingWizard = () => {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  const [step, setStep] = useState(1)
+  const [uploading, setUploading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [rooms, setRooms] = useState([])
+
+  const [state, setState] = useState({
+    roomId: searchParams.get('room') || '',
+    tenantDetails: {
+      full_name: '',
+      phone_number: '',
+      check_in_date: new Date().toISOString().substring(0, 10),
+      ac_opted: false,
+      has_vehicle: false,
+      vehicle_number: ''
+    },
+    documentFile: null,
+    uploadedDocId: null,
+    ocrFields: { name: '', address: '', id_number: '', dob: '' }
+  })
+
+  useEffect(() => {
+    api.get('/rooms')
+      .then(res => setRooms(res))
+      .catch(() => toast.error('Failed to load rooms'))
+  }, [])
+
+  const handleNext = () => setStep(s => s + 1)
+  const handleBack = () => setStep(s => s - 1)
+
+  // Step 3: Upload file to backend, get back real OCR fields
+  const handleUploadAndExtract = async () => {
+    if (!state.documentFile) return toast.error('Please select a file')
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('document', state.documentFile)
+      formData.append('doc_type', 'id_proof_front')
+
+      // We upload to a temp tenant ID or use a separate /ocr endpoint
+      // For onboarding (no tenant id yet), call a dedicated /documents/ocr endpoint
+      const res = await api.post('/documents/ocr', formData)
+
+      setState(prev => ({
+        ...prev,
+        uploadedDocId: res.document?.id || null,
+        ocrFields: {
+          name: res.ocrFields?.name || '',
+          address: res.ocrFields?.address || '',
+          id_number: res.ocrFields?.id_number || '',
+          dob: res.ocrFields?.dob || ''
+        }
+      }))
+
+      toast.success('Document scanned! Review the extracted fields.')
+      handleNext()
+    } catch (err) {
+      toast.error('Upload or OCR failed: ' + err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const submit = async () => {
+    setSubmitting(true)
+    try {
+      const tenantRes = await api.post('/tenants', {
+        room_id: Number(state.roomId),
+        full_name: state.tenantDetails.full_name,
+        phone_number: state.tenantDetails.phone_number,
+        check_in_date: state.tenantDetails.check_in_date,
+        ac_opted: state.tenantDetails.ac_opted,
+        has_vehicle: state.tenantDetails.has_vehicle,
+        vehicle_number: state.tenantDetails.vehicle_number,
+        address: state.ocrFields.address,
+        id_proof_type: 'aadhaar',
+        id_proof_number: state.ocrFields.id_number,
+      })
+
+      if (state.documentFile) {
+        const formData = new FormData()
+        formData.append('document', state.documentFile)
+        formData.append('doc_type', 'id_proof_front')
+        await api.post(`/tenants/${tenantRes.id}/documents`, formData)
+      }
+
+      toast.success('Tenant onboarded successfully!')
+      navigate('/')
+    } catch (err) {
+      toast.error('Failed to onboard: ' + err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const inputCls = 'w-full px-4 py-3 rounded-md border border-border bg-bg text-text-primary focus:outline-none focus:border-accent transition-colors'
+  const btnPrimary = 'w-full bg-accent text-surface py-3 rounded-md font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2'
+  const btnSecondary = 'w-full border border-border py-3 rounded-md font-semibold hover:bg-bg transition-colors'
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <header className="mb-8">
+        <h1 className="text-3xl font-heading font-bold text-text-primary">Onboard Tenant</h1>
+        <p className="text-text-secondary mt-1">Step {step} of 4</p>
+        <div className="flex gap-2 mt-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className={`h-2 flex-1 rounded-full transition-colors ${i <= step ? 'bg-accent' : 'bg-border'}`} />
+          ))}
+        </div>
+      </header>
+
+      <div className="bg-surface border border-border rounded-xl shadow-sm p-6">
+
+        {/* Step 1 — Room Selection */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-heading font-bold">Select Room</h2>
+            <select
+              value={state.roomId}
+              onChange={e => setState({ ...state, roomId: e.target.value })}
+              className={inputCls}
+            >
+              <option value="">Choose a room...</option>
+              {rooms.map(room => {
+                const available = room.capacity - room.active_tenants_count
+                const isFull = available <= 0
+                return (
+                  <option key={room.id} value={room.id} disabled={isFull}>
+                    Room {room.room_number} — {isFull ? 'Full' : `${available} seat${available > 1 ? 's' : ''} open`}
+                  </option>
+                )
+              })}
+            </select>
+            <button onClick={handleNext} disabled={!state.roomId} className={btnPrimary}>Next</button>
+          </div>
+        )}
+
+        {/* Step 2 — Tenant Details */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-heading font-bold">Tenant Details</h2>
+            <input
+              placeholder="Full Name *"
+              className={inputCls}
+              value={state.tenantDetails.full_name}
+              onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, full_name: e.target.value } })}
+            />
+            <input
+              placeholder="Phone Number *"
+              type="tel"
+              className={inputCls}
+              value={state.tenantDetails.phone_number}
+              onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, phone_number: e.target.value } })}
+            />
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Move-in Date</label>
+              <input
+                type="date"
+                max={new Date().toISOString().substring(0, 10)}
+                className={inputCls}
+                value={state.tenantDetails.check_in_date}
+                onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, check_in_date: e.target.value } })}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <input type="checkbox" id="ac" checked={state.tenantDetails.ac_opted} onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, ac_opted: e.target.checked } })} className="w-4 h-4" />
+              <label htmlFor="ac" className="text-text-primary">AC opted</label>
+            </div>
+            <div className="flex items-center gap-3">
+              <input type="checkbox" id="vehicle" checked={state.tenantDetails.has_vehicle} onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, has_vehicle: e.target.checked } })} className="w-4 h-4" />
+              <label htmlFor="vehicle" className="text-text-primary">Has vehicle</label>
+            </div>
+            {state.tenantDetails.has_vehicle && (
+              <input placeholder="Vehicle Number" className={inputCls} value={state.tenantDetails.vehicle_number} onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, vehicle_number: e.target.value } })} />
+            )}
+            <div className="flex gap-4 pt-2">
+              <button onClick={handleBack} className={btnSecondary}>Back</button>
+              <button onClick={handleNext} disabled={!state.tenantDetails.full_name || !state.tenantDetails.phone_number} className={btnPrimary}>Next</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3 — Document Upload + OCR */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-heading font-bold">Upload Aadhaar / ID Proof</h2>
+            <p className="text-text-secondary text-sm">Upload a clear photo or PDF. Text will be extracted automatically.</p>
+
+            <label className="block border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-accent transition-colors">
+              <UploadCloud size={32} className="mx-auto mb-2 text-text-secondary" />
+              <p className="text-text-secondary text-sm">
+                {state.documentFile ? (
+                  <span className="flex items-center justify-center gap-2 text-success">
+                    <CheckCircle size={16} /> {state.documentFile.name}
+                  </span>
+                ) : 'Click to choose a file (JPG, PNG, PDF)'}
+              </p>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={e => setState({ ...state, documentFile: e.target.files[0] || null })}
+              />
+            </label>
+
+            <div className="flex gap-4 pt-2">
+              <button onClick={handleBack} className={btnSecondary}>Back</button>
+              <button
+                onClick={handleUploadAndExtract}
+                disabled={!state.documentFile || uploading}
+                className={btnPrimary}
+              >
+                {uploading ? <><Loader2 size={18} className="animate-spin" /> Extracting...</> : 'Upload & Extract'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4 — Review OCR Data */}
+        {step === 4 && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-heading font-bold">Review Extracted Data</h2>
+            <p className="text-text-secondary text-sm">Fields are pre-filled from the document. Correct any errors before confirming.</p>
+
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Name (from document)</label>
+              <input className={inputCls} value={state.ocrFields.name} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, name: e.target.value } })} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Address</label>
+              <input className={inputCls} value={state.ocrFields.address} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, address: e.target.value } })} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Aadhaar / ID Number</label>
+              <input className={inputCls} value={state.ocrFields.id_number} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, id_number: e.target.value } })} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1">Date of Birth</label>
+              <input className={inputCls} value={state.ocrFields.dob} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, dob: e.target.value } })} />
+            </div>
+
+            <div className="flex gap-4 pt-2">
+              <button onClick={handleBack} className={btnSecondary}>Back</button>
+              <button onClick={submit} disabled={submitting} className={`${btnPrimary} bg-success`}>
+                {submitting ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : 'Confirm & Onboard'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default OnboardingWizard
