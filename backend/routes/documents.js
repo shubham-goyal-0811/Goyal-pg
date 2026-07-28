@@ -5,13 +5,14 @@ const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const upload = require('../middleware/upload');
 const { parseAadhaarOCR } = require('../services/ocr');
-const sharp = require('sharp'); // Added sharp
+const sharp = require('sharp');
+const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
 router.use(roleCheck('admin'));
 
 // GET /tenants/:id/documents
-router.get('/', async (req, res) => {
+router.get('/', validateId(), async (req, res) => {
   try {
     const { data: documents, error } = await supabase
       .from('tenant_documents')
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /tenants/:id/documents
-router.post('/', upload.single('document'), async (req, res) => {
+router.post('/', validateId(), upload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -93,7 +94,7 @@ router.post('/', upload.single('document'), async (req, res) => {
 
 // GET /tenants/:id/documents/:docId/signed-url
 // Generates a short-lived signed URL so the frontend can preview the file
-router.get('/:docId/signed-url', async (req, res) => {
+router.get('/:docId/signed-url', validateId(), validateId('docId'), async (req, res) => {
   try {
     const { data: doc, error: docError } = await supabase
       .from('tenant_documents')

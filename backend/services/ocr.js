@@ -42,10 +42,13 @@ const parseAadhaarOCR = async (fileBuffer, mimetype) => {
     }
 
     const rawText = json.responses?.[0]?.textAnnotations?.[0]?.description || '';
-    console.log('[OCR] Raw extracted text:\n', rawText);
 
     const ocrFields = extractAadhaarFields(rawText);
-    console.log('[OCR] Parsed fields:', ocrFields);
+    // Debug-only — never log PII in production
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[OCR] Raw extracted text:\n', rawText);
+      console.log('[OCR] Parsed fields:', ocrFields);
+    }
 
     return { rawText, ocrFields };
   } catch (err) {

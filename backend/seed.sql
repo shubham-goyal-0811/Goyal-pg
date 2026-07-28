@@ -46,6 +46,7 @@ CREATE TABLE tenants (
   check_out_date date,
   status tenant_status NOT NULL DEFAULT 'active',
   security_deposit_amount decimal,
+  parent_contact text,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
 );

@@ -3,6 +3,7 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
 router.use(roleCheck('admin'));
@@ -47,15 +48,24 @@ router.get('/', async (req, res) => {
 });
 
 // PATCH /police-verification/:tenant_id
-router.patch('/:tenant_id', async (req, res) => {
+const PV_EDITABLE_FIELDS = ['status', 'submitted_date', 'verified_date', 'reference_number', 'notes'];
+
+router.patch('/:tenant_id', validateId('tenant_id'), async (req, res) => {
   try {
-    const updates = { ...req.body, updated_at: new Date().toISOString() };
+    const safeUpdates = {};
+    for (const field of PV_EDITABLE_FIELDS) {
+      if (req.body[field] !== undefined) safeUpdates[field] = req.body[field];
+    }
+    if (Object.keys(safeUpdates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    safeUpdates.updated_at = new Date().toISOString();
 
     const { data: record, error } = await supabase
       .from('police_verification')
       .upsert({
         tenant_id: Number(req.params.tenant_id),
-        ...updates
+        ...safeUpdates
       }, { onConflict: 'tenant_id' })
       .select()
       .single();

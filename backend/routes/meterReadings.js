@@ -3,12 +3,13 @@ const router = express.Router({ mergeParams: true }); // to access :roomId from 
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
 router.use(roleCheck('admin'));
 
 // GET /rooms/:id/meter-readings
-router.get('/', async (req, res) => {
+router.get('/', validateId(), async (req, res) => {
   try {
     const { data: readings, error } = await supabase
       .from('meter_readings')
@@ -24,9 +25,16 @@ router.get('/', async (req, res) => {
 });
 
 // POST /rooms/:id/meter-readings
-router.post('/', async (req, res) => {
+router.post('/', validateId(), async (req, res) => {
   const { reading_date, reading_value, triggered_by } = req.body;
   const roomId = req.params.id;
+
+  // ── Input validation ────────────────────────────────────────────────
+  if (!reading_date) return res.status(400).json({ error: 'reading_date is required' });
+  if (reading_value === undefined || reading_value === null || isNaN(Number(reading_value)) || Number(reading_value) < 0) {
+    return res.status(400).json({ error: 'reading_value must be a non-negative number' });
+  }
+  // ────────────────────────────────────────────────────────────────────
 
   try {
     // 1. Snapshot active tenants in this room

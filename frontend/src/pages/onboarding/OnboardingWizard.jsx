@@ -18,6 +18,7 @@ const OnboardingWizard = () => {
     tenantDetails: {
       full_name: '',
       phone_number: '',
+      parent_contact: '',
       check_in_date: new Date().toISOString().substring(0, 10),
       ac_opted: false,
       has_vehicle: false,
@@ -78,6 +79,7 @@ const OnboardingWizard = () => {
         room_id: Number(state.roomId),
         full_name: state.tenantDetails.full_name,
         phone_number: state.tenantDetails.phone_number,
+        parent_contact: state.tenantDetails.parent_contact || null,
         check_in_date: state.tenantDetails.check_in_date,
         ac_opted: state.tenantDetails.ac_opted,
         has_vehicle: state.tenantDetails.has_vehicle,
@@ -161,6 +163,13 @@ const OnboardingWizard = () => {
               className={inputCls}
               value={state.tenantDetails.phone_number}
               onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, phone_number: e.target.value } })}
+            />
+            <input
+              placeholder="Parent's Contact Number"
+              type="tel"
+              className={inputCls}
+              value={state.tenantDetails.parent_contact}
+              onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, parent_contact: e.target.value } })}
             />
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1">Move-in Date</label>

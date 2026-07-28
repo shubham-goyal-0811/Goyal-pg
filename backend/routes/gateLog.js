@@ -3,6 +3,7 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
 router.use(roleCheck('admin'));
@@ -49,7 +50,7 @@ router.post('/', async (req, res) => {
 });
 
 // PATCH /gate-log/:id/mark-out
-router.patch('/:id/mark-out', async (req, res) => {
+router.patch('/:id/mark-out', validateId(), async (req, res) => {
   try {
     const { data: log, error } = await supabase
       .from('gate_log')

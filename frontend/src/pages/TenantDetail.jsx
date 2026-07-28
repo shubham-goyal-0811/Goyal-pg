@@ -172,6 +172,7 @@ const TenantDetail = () => {
             <li><span className="font-medium text-text-primary">ID Proof:</span> {tenant.id_proof_type?.toUpperCase() || '—'} — {tenant.id_proof_number || '—'}</li>
             <li><span className="font-medium text-text-primary">AC Opted:</span> {tenant.ac_opted ? 'Yes' : 'No'}</li>
             <li><span className="font-medium text-text-primary">Vehicle:</span> {tenant.has_vehicle ? tenant.vehicle_number : 'No'}</li>
+            <li><span className="font-medium text-text-primary">Parent's Contact:</span> {tenant.parent_contact || '—'}</li>
             <li><span className="font-medium text-text-primary">Base Rent:</span> ₹{tenant.rooms?.seat_rent}</li>
           </ul>
         </div>

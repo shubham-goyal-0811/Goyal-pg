@@ -3,6 +3,7 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
 router.use(roleCheck('admin'));
@@ -29,11 +30,13 @@ router.get('/', async (req, res) => {
 
     const formattedRooms = rooms.map(room => {
       const activeTenants = room.tenants.filter(t => t.status === 'active');
+      // Use IST offset (+5:30) explicitly to avoid UTC day-rollover mismatches
+      const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
       return {
         ...room,
         active_tenants_count: activeTenants.length,
         tenants: activeTenants.map(t => {
-          const currentMonth = new Date().toISOString().substring(0, 7) + '-01'; 
           const currentRent = t.rent_payments.find(r => r.billing_month === currentMonth);
           return {
             id: t.id,
@@ -44,13 +47,14 @@ router.get('/', async (req, res) => {
       };
     });
 
+
     res.json(formattedRooms);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', validateId(), async (req, res) => {
   try {
     const { data: room, error } = await supabase
       .from('rooms')
@@ -65,7 +69,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', validateId(), async (req, res) => {
   const { capacity, has_ac, seat_rent, ac_charge } = req.body;
   try {
     const { data: room, error } = await supabase
