@@ -11,7 +11,9 @@ const authMiddleware = async (req, res, next) => {
   const { data: { user }, error } = await supabase.auth.getUser(token);
 
   if (error || !user) {
-    return res.status(401).json({ error: 'Unauthorized', details: error });
+    // Log server-side; don't hand the raw provider error back to the client.
+    if (error) console.warn('[auth] token rejected:', error.message);
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   req.user = user;

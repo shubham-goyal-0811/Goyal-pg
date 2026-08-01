@@ -84,6 +84,22 @@ const bustRelated = (endpoint) => {
   if (endpoint.startsWith('/police-verification')) cacheBust('/police-verification')
 }
 
+// ── Errors ───────────────────────────────────────────────────────────────────
+// The API answers with { error: "..." } on every failure path (401/403/404/429
+// /500). Surface that message rather than the raw JSON body, so anything doing
+// toast.error(err.message) reads like a sentence.
+const throwApiError = async (res) => {
+  const body = await res.text()
+  let message = body
+  try {
+    message = JSON.parse(body).error || body
+  } catch { /* not JSON — use the raw body */ }
+
+  const err = new Error(message || `Request failed (${res.status})`)
+  err.status = res.status
+  throw err
+}
+
 // ── Auth Headers ─────────────────────────────────────────────────────────────
 const getHeaders = async () => {
   const token = await getToken()
@@ -107,7 +123,7 @@ export const api = {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       headers: await getHeaders()
     })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) await throwApiError(res)
     const data = await res.json()
 
     // Store in cache
@@ -128,7 +144,7 @@ export const api = {
       headers,
       body
     })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) await throwApiError(res)
     const result = await res.json()
     bustRelated(endpoint) // invalidate stale GET caches
     return result
@@ -140,7 +156,7 @@ export const api = {
       headers: await getHeaders(),
       body: JSON.stringify(data)
     })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) await throwApiError(res)
     const result = await res.json()
     bustRelated(endpoint) // invalidate stale GET caches
     return result

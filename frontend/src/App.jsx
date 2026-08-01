@@ -13,8 +13,14 @@ import OnboardingWizard from './pages/onboarding/OnboardingWizard'
 import MeterReading from './pages/MeterReading'
 
 const ProtectedRoute = ({ children }) => {
-  const { user, isAdmin } = useAuth()
-  if (!user || !isAdmin) return <Navigate to="/login" replace />
+  const { user, role } = useAuth()
+  if (!user || !role || role === 'viewer') return <Navigate to="/login" replace />
+  return <Layout>{children}</Layout>
+}
+
+const AdminRoute = ({ children }) => {
+  const { user, role } = useAuth()
+  if (!user || role !== 'admin') return <Navigate to="/" replace />
   return <Layout>{children}</Layout>
 }
 
@@ -29,7 +35,7 @@ function App() {
       <Route path="/onboarding" element={<ProtectedRoute><OnboardingWizard /></ProtectedRoute>} />
       <Route path="/tenants/:id" element={<ProtectedRoute><TenantDetail /></ProtectedRoute>} />
       <Route path="/police-verification" element={<ProtectedRoute><PoliceVerification /></ProtectedRoute>} />
-      <Route path="/meter-reading/:roomId" element={<ProtectedRoute><MeterReading /></ProtectedRoute>} />
+      <Route path="/meter-reading/:roomId" element={<AdminRoute><MeterReading /></AdminRoute>} />
       <Route path="/gate-log" element={<ProtectedRoute><GateLog /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 

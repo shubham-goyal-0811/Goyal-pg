@@ -3,16 +3,18 @@ const router = express.Router({ mergeParams: true }); // to access :id (tenant_i
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const upload = require('../middleware/upload');
+const { uploadLimiter } = require('../middleware/rateLimit');
 const { parseAadhaarOCR } = require('../services/ocr');
 const sharp = require('sharp');
 const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
-router.use(roleCheck('admin'));
 
-// GET /tenants/:id/documents
-router.get('/', validateId(), async (req, res) => {
+// GET /tenants/:id/documents — admin only. Gatekeepers may upload ID scans
+// during onboarding but must not be able to browse or read them back.
+router.get('/', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
   try {
     const { data: documents, error } = await supabase
       .from('tenant_documents')
@@ -27,7 +29,9 @@ router.get('/', validateId(), async (req, res) => {
 });
 
 // POST /tenants/:id/documents
-router.post('/', validateId(), upload.single('document'), async (req, res) => {
+// uploadLimiter sits after roleCheck so rejected callers don't burn the budget
+// and so it can key on req.user.id rather than a shared office IP.
+router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), uploadLimiter, validateId(), upload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -94,7 +98,7 @@ router.post('/', validateId(), upload.single('document'), async (req, res) => {
 
 // GET /tenants/:id/documents/:docId/signed-url
 // Generates a short-lived signed URL so the frontend can preview the file
-router.get('/:docId/signed-url', validateId(), validateId('docId'), async (req, res) => {
+router.get('/:docId/signed-url', roleCheck(ADMIN_ONLY), validateId(), validateId('docId'), async (req, res) => {
   try {
     const { data: doc, error: docError } = await supabase
       .from('tenant_documents')

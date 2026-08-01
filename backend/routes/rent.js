@@ -2,15 +2,16 @@ const express = require('express');
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_ONLY } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
 
 const tenantRentRouter = express.Router({ mergeParams: true });
 const markPaidRouter = express.Router();
 
 tenantRentRouter.use(authMiddleware);
-tenantRentRouter.use(roleCheck('admin'));
+tenantRentRouter.use(roleCheck(ADMIN_ONLY));
 markPaidRouter.use(authMiddleware);
-markPaidRouter.use(roleCheck('admin'));
+markPaidRouter.use(roleCheck(ADMIN_ONLY));
 
 // GET /tenants/:id/rent
 tenantRentRouter.get('/', validateId(), async (req, res) => {

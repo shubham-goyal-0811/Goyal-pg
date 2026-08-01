@@ -3,15 +3,16 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
 
+// authMiddleware here also covers the nested meter-readings router below.
 router.use(authMiddleware);
-router.use(roleCheck('admin'));
 
 const meterReadingsRouter = require('./meterReadings');
 router.use('/:id/meter-readings', meterReadingsRouter);
 
-router.get('/', async (req, res) => {
+router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
     const { data: rooms, error } = await supabase
       .from('rooms')
@@ -54,7 +55,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', validateId(), async (req, res) => {
+router.get('/:id', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res) => {
   try {
     const { data: room, error } = await supabase
       .from('rooms')
@@ -69,7 +70,7 @@ router.get('/:id', validateId(), async (req, res) => {
   }
 });
 
-router.patch('/:id', validateId(), async (req, res) => {
+router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
   const { capacity, has_ac, seat_rent, ac_charge } = req.body;
   try {
     const { data: room, error } = await supabase

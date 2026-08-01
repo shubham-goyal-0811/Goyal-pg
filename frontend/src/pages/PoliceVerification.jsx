@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 
 const PoliceVerification = () => {
+  const { role } = useAuth()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -61,15 +63,19 @@ const PoliceVerification = () => {
                     </span>
                   </td>
                   <td className="p-4">
-                    <select
-                      className="bg-surface border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-accent"
-                      value={record.status}
-                      onChange={(e) => handleStatusChange(record.tenant_id, e.target.value)}
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="submitted">Submitted</option>
-                      <option value="verified">Verified</option>
-                    </select>
+                    {role === 'admin' ? (
+                      <select
+                        className="bg-surface border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                        value={record.status}
+                        onChange={(e) => handleStatusChange(record.tenant_id, e.target.value)}
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="submitted">Submitted</option>
+                        <option value="verified">Verified</option>
+                      </select>
+                    ) : (
+                      <span className="text-text-secondary text-sm">View only</span>
+                    )}
                   </td>
                 </tr>
               ))}

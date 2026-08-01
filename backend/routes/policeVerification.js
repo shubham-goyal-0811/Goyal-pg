@@ -3,14 +3,14 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
-router.use(roleCheck('admin'));
 
 // GET /police-verification
 // Returns ALL active tenants with their verification status (pending if no record yet)
-router.get('/', async (req, res) => {
+router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
     // Fetch all active tenants
     const { data: tenants, error: tenantError } = await supabase
@@ -50,7 +50,7 @@ router.get('/', async (req, res) => {
 // PATCH /police-verification/:tenant_id
 const PV_EDITABLE_FIELDS = ['status', 'submitted_date', 'verified_date', 'reference_number', 'notes'];
 
-router.patch('/:tenant_id', validateId('tenant_id'), async (req, res) => {
+router.patch('/:tenant_id', roleCheck(ADMIN_ONLY), validateId('tenant_id'), async (req, res) => {
   try {
     const safeUpdates = {};
     for (const field of PV_EDITABLE_FIELDS) {

@@ -2,18 +2,20 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const upload = require('../middleware/upload');
+const { uploadLimiter } = require('../middleware/rateLimit');
 const { parseAadhaarOCR } = require('../services/ocr');
 
 router.use(authMiddleware);
-router.use(roleCheck('admin'));
 
 /**
  * POST /documents/ocr
  * Pre-tenant upload — runs OCR only, no DB record yet.
  * Used by the onboarding wizard before the tenant is created.
  */
-router.post('/ocr', upload.single('document'), async (req, res) => {
+// Each call bills Google Cloud Vision — see middleware/rateLimit.js.
+router.post('/ocr', roleCheck(ADMIN_OR_GATEKEEPER), uploadLimiter, upload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });

@@ -3,14 +3,14 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ROLES, ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { calculateElectricityCharges } = require('../services/electricity');
 const { validateId, sanitizeSearch } = require('../middleware/validate');
 
 router.use(authMiddleware);
-router.use(roleCheck('admin'));
 
 // POST /tenants - onboard new tenant
-router.post('/', async (req, res) => {
+router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
     const {
       room_id, full_name, phone_number, parent_contact, address,
@@ -50,7 +50,7 @@ router.post('/', async (req, res) => {
 });
 
 // GET /tenants — list all active tenants (includes phone for search/disambiguation)
-router.get('/', async (req, res) => {
+router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
     const { search } = req.query;
     let query = supabase
@@ -75,16 +75,28 @@ router.get('/', async (req, res) => {
 });
 
 // GET /tenants/:id
-router.get('/:id', validateId(), async (req, res) => {
+// Admins get the full record. Gatekeepers get identity + room only — no
+// ID-proof numbers, no document scans, no rent history, no home address.
+const TENANT_SELECT_ADMIN = `
+  *,
+  rooms (room_number, floor, seat_rent, ac_charge),
+  tenant_documents (*),
+  rent_payments (*)
+`;
+
+const TENANT_SELECT_GATEKEEPER = `
+  id, full_name, phone_number, parent_contact, status, room_id,
+  check_in_date, check_out_date, ac_opted, has_vehicle, vehicle_number,
+  rooms (room_number, floor)
+`;
+
+router.get('/:id', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res) => {
   try {
+    const isAdmin = req.user.role === ROLES.ADMIN;
+
     const { data: tenant, error } = await supabase
       .from('tenants')
-      .select(`
-        *,
-        rooms (room_number, floor, seat_rent, ac_charge),
-        tenant_documents (*),
-        rent_payments (*)
-      `)
+      .select(isAdmin ? TENANT_SELECT_ADMIN : TENANT_SELECT_GATEKEEPER)
       .eq('id', req.params.id)
       .single();
 
@@ -102,7 +114,7 @@ const TENANT_EDITABLE_FIELDS = [
   'id_proof_type', 'id_proof_number', 'check_in_date'
 ];
 
-router.patch('/:id', validateId(), async (req, res) => {
+router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
   try {
     const safeUpdates = {};
     for (const field of TENANT_EDITABLE_FIELDS) {
@@ -128,7 +140,7 @@ router.patch('/:id', validateId(), async (req, res) => {
 });
 
 // POST /tenants/:id/checkout
-router.post('/:id/checkout', validateId(), async (req, res) => {
+router.post('/:id/checkout', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
   try {
     const tenantId = req.params.id;
     const today = new Date().toISOString().substring(0, 10);
@@ -161,7 +173,7 @@ router.post('/:id/checkout', validateId(), async (req, res) => {
 // Creates (or recalculates) the rent_payment record for a tenant for a given billing month.
 // Call this once per tenant per month after the month's meter readings are in.
 // Body: { billing_month: 'YYYY-MM' }
-router.post('/:id/generate-rent', validateId(), async (req, res) => {
+router.post('/:id/generate-rent', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
   try {
     const tenantId = Number(req.params.id);
     const { billing_month } = req.body; // e.g. '2025-07'

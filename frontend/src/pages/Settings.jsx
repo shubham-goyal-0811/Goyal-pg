@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 import { Save } from 'lucide-react'
 
 const Settings = () => {
+  const { role } = useAuth()
   const [settings, setSettings] = useState(null)
   const [rooms, setRooms] = useState([])
   const [roomEdits, setRoomEdits] = useState({})
@@ -89,6 +91,12 @@ const Settings = () => {
         <p className="text-text-secondary mt-1">Configure property-wide variables</p>
       </header>
 
+      {role !== 'admin' && (
+        <div className="bg-warning/10 text-warning px-4 py-3 rounded-md mb-6 border border-warning/20">
+          You have view-only access to settings.
+        </div>
+      )}
+
       {/* Global Settings */}
       <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
         <form onSubmit={handleSubmitSettings} className="space-y-6">
@@ -102,6 +110,7 @@ const Settings = () => {
               name="electricity_rate_per_unit"
               value={settings?.electricity_rate_per_unit ?? ''}
               onChange={handleSettingsChange}
+              disabled={role !== 'admin'}
               className={inputCls}
             />
           </div>
@@ -114,12 +123,13 @@ const Settings = () => {
               name="total_parking_spots"
               value={settings?.total_parking_spots ?? ''}
               onChange={handleSettingsChange}
+              disabled={role !== 'admin'}
               className={inputCls}
             />
           </div>
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || role !== 'admin'}
             className="w-full flex items-center justify-center gap-2 bg-accent text-surface px-4 py-3 rounded-md font-semibold hover:opacity-90 transition-opacity h-[44px] disabled:opacity-50"
           >
             <Save size={20} />
@@ -146,16 +156,16 @@ const Settings = () => {
               <tr key={room.id} className="border-b border-border">
                 <td className="p-3 font-medium">{room.room_number}</td>
                 <td className="p-3">
-                  <input type="number" value={roomEdits[room.id]?.capacity ?? ''} onChange={e => handleRoomEdit(room.id, 'capacity', e.target.value)} className="w-16 p-1 border border-border rounded bg-bg text-center" />
+                  <input type="number" value={roomEdits[room.id]?.capacity ?? ''} onChange={e => handleRoomEdit(room.id, 'capacity', e.target.value)} disabled={role !== 'admin'} className="w-16 p-1 border border-border rounded bg-bg text-center disabled:opacity-50" />
                 </td>
                 <td className="p-3">
-                  <input type="number" value={roomEdits[room.id]?.seat_rent ?? ''} onChange={e => handleRoomEdit(room.id, 'seat_rent', e.target.value)} className="w-24 p-1 border border-border rounded bg-bg text-center" />
+                  <input type="number" value={roomEdits[room.id]?.seat_rent ?? ''} onChange={e => handleRoomEdit(room.id, 'seat_rent', e.target.value)} disabled={role !== 'admin'} className="w-24 p-1 border border-border rounded bg-bg text-center disabled:opacity-50" />
                 </td>
                 <td className="p-3">
-                  <input type="number" value={roomEdits[room.id]?.ac_charge ?? ''} onChange={e => handleRoomEdit(room.id, 'ac_charge', e.target.value)} className="w-24 p-1 border border-border rounded bg-bg text-center" />
+                  <input type="number" value={roomEdits[room.id]?.ac_charge ?? ''} onChange={e => handleRoomEdit(room.id, 'ac_charge', e.target.value)} disabled={role !== 'admin'} className="w-24 p-1 border border-border rounded bg-bg text-center disabled:opacity-50" />
                 </td>
                 <td className="p-3">
-                  <input type="checkbox" checked={roomEdits[room.id]?.has_ac ?? false} onChange={e => handleRoomEdit(room.id, 'has_ac', e.target.checked)} className="w-4 h-4" />
+                  <input type="checkbox" checked={roomEdits[room.id]?.has_ac ?? false} onChange={e => handleRoomEdit(room.id, 'has_ac', e.target.checked)} disabled={role !== 'admin'} className="w-4 h-4 disabled:opacity-50" />
                 </td>
               </tr>
             ))}
@@ -163,7 +173,7 @@ const Settings = () => {
         </table>
         <button
           onClick={handleSaveRooms}
-          disabled={savingRooms}
+          disabled={savingRooms || role !== 'admin'}
           className="mt-4 flex items-center gap-2 bg-accent text-surface px-4 py-2 rounded-md font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           <Save size={16} />

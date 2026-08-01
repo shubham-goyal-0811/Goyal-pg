@@ -3,13 +3,13 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
 
 router.use(authMiddleware);
-router.use(roleCheck('admin'));
 
 // GET /gate-log
-router.get('/', async (req, res) => {
+router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
     const { data: logs, error } = await supabase
       .from('gate_log')
@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /gate-log
-router.post('/', async (req, res) => {
+router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
     const { tenant_id, visitor_name, in_time, out_time } = req.body;
     const { data: log, error } = await supabase
@@ -50,7 +50,7 @@ router.post('/', async (req, res) => {
 });
 
 // PATCH /gate-log/:id/mark-out
-router.patch('/:id/mark-out', validateId(), async (req, res) => {
+router.patch('/:id/mark-out', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res) => {
   try {
     const { data: log, error } = await supabase
       .from('gate_log')

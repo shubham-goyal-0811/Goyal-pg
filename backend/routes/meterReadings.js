@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true }); // to access :roomId from parent if needed
 const supabase = require('../config/supabase');
-const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
 
-router.use(authMiddleware);
-router.use(roleCheck('admin'));
+// NOTE: this router is mounted under routes/rooms.js, which already applies
+// authMiddleware. Mounting it anywhere else requires applying auth there too.
 
 // GET /rooms/:id/meter-readings
-router.get('/', validateId(), async (req, res) => {
+router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res) => {
   try {
     const { data: readings, error } = await supabase
       .from('meter_readings')
@@ -25,7 +25,7 @@ router.get('/', validateId(), async (req, res) => {
 });
 
 // POST /rooms/:id/meter-readings
-router.post('/', validateId(), async (req, res) => {
+router.post('/', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
   const { reading_date, reading_value, triggered_by } = req.body;
   const roomId = req.params.id;
 

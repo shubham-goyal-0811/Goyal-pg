@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 import MeterModal from '../components/MeterModal'
@@ -68,6 +69,7 @@ const DocPreviewModal = ({ doc, tenantId, onClose }) => {
 const TenantDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { role } = useAuth()
   const [tenant, setTenant] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMeterModalOpen, setMeterModalOpen] = useState(false)
@@ -114,6 +116,11 @@ const TenantDetail = () => {
   if (loading) return <div className="flex justify-center p-8 text-text-secondary">Loading...</div>
   if (!tenant) return <div className="flex justify-center p-8 text-text-secondary">Tenant not found</div>
 
+  // Rent, ID-proof numbers and document scans are admin-only. The API already
+  // omits these fields for gatekeepers — this just avoids rendering empty
+  // sections that look like missing data rather than withheld data.
+  const isAdmin = role === 'admin'
+
   return (
     <div>
       {/* Modals */}
@@ -126,7 +133,7 @@ const TenantDetail = () => {
           <h1 className="text-3xl font-heading font-bold text-text-primary">{tenant.full_name}</h1>
           <p className="text-text-secondary mt-1">Room {tenant.rooms?.room_number} • {tenant.phone_number}</p>
         </div>
-        {tenant.status === 'active' && (
+        {tenant.status === 'active' && isAdmin && (
           <button onClick={handleCheckout} className="bg-warning text-surface px-4 py-2 rounded-md font-semibold hover:opacity-90 h-[44px]">
             Checkout Tenant
           </button>
@@ -134,79 +141,87 @@ const TenantDetail = () => {
       </header>
 
       <div className="grid md:grid-cols-2 gap-8">
-        {/* Rent History */}
-        <div className="bg-surface border border-border rounded-xl shadow-sm p-6">
-          <h2 className="text-xl font-heading font-bold mb-4">Rent History</h2>
-          {!tenant.rent_payments?.length ? (
-            <p className="text-text-secondary text-sm">No rent records yet</p>
-          ) : (
-            <div className="space-y-3">
-              {tenant.rent_payments.map(payment => (
-                <div key={payment.id} className="flex justify-between items-center p-3 bg-bg rounded-md">
-                  <div>
-                    <p className="font-medium">
-                      {new Date(payment.billing_month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-                    </p>
-                    <p className="text-sm text-text-secondary">₹{payment.total_amount}</p>
+        {/* Rent History — admin only */}
+        {isAdmin && (
+          <div className="bg-surface border border-border rounded-xl shadow-sm p-6">
+            <h2 className="text-xl font-heading font-bold mb-4">Rent History</h2>
+            {!tenant.rent_payments?.length ? (
+              <p className="text-text-secondary text-sm">No rent records yet</p>
+            ) : (
+              <div className="space-y-3">
+                {tenant.rent_payments.map(payment => (
+                  <div key={payment.id} className="flex justify-between items-center p-3 bg-bg rounded-md">
+                    <div>
+                      <p className="font-medium">
+                        {new Date(payment.billing_month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                      </p>
+                      <p className="text-sm text-text-secondary">₹{payment.total_amount}</p>
+                    </div>
+                    {payment.status === 'paid' ? (
+                      <span className="text-success font-semibold px-3 py-1 bg-success/10 rounded-full text-sm">Paid</span>
+                    ) : (
+                      <button onClick={() => markPaid(payment.id)} className="text-accent font-semibold text-sm px-3 py-1 bg-accent/10 rounded-full hover:underline">
+                        Mark Paid
+                      </button>
+                    )}
                   </div>
-                  {payment.status === 'paid' ? (
-                    <span className="text-success font-semibold px-3 py-1 bg-success/10 rounded-full text-sm">Paid</span>
-                  ) : (
-                    <button onClick={() => markPaid(payment.id)} className="text-accent font-semibold text-sm px-3 py-1 bg-accent/10 rounded-full hover:underline">
-                      Mark Paid
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Profile */}
-        <div className="bg-surface border border-border rounded-xl shadow-sm p-6">
+        <div className={`bg-surface border border-border rounded-xl shadow-sm p-6 ${isAdmin ? '' : 'md:col-span-2'}`}>
           <h2 className="text-xl font-heading font-bold mb-4">Profile</h2>
           <ul className="space-y-3 text-text-secondary">
             <li><span className="font-medium text-text-primary">Status:</span> {tenant.status?.toUpperCase()}</li>
-            <li><span className="font-medium text-text-primary">Address:</span> {tenant.address || '—'}</li>
             <li><span className="font-medium text-text-primary">Check-in:</span> {tenant.check_in_date}</li>
-            <li><span className="font-medium text-text-primary">ID Proof:</span> {tenant.id_proof_type?.toUpperCase() || '—'} — {tenant.id_proof_number || '—'}</li>
             <li><span className="font-medium text-text-primary">AC Opted:</span> {tenant.ac_opted ? 'Yes' : 'No'}</li>
             <li><span className="font-medium text-text-primary">Vehicle:</span> {tenant.has_vehicle ? tenant.vehicle_number : 'No'}</li>
             <li><span className="font-medium text-text-primary">Parent's Contact:</span> {tenant.parent_contact || '—'}</li>
-            <li><span className="font-medium text-text-primary">Base Rent:</span> ₹{tenant.rooms?.seat_rent}</li>
+            {isAdmin && (
+              <>
+                <li><span className="font-medium text-text-primary">Address:</span> {tenant.address || '—'}</li>
+                <li><span className="font-medium text-text-primary">ID Proof:</span> {tenant.id_proof_type?.toUpperCase() || '—'} — {tenant.id_proof_number || '—'}</li>
+                <li><span className="font-medium text-text-primary">Base Rent:</span> ₹{tenant.rooms?.seat_rent}</li>
+              </>
+            )}
           </ul>
         </div>
 
-        {/* ID Documents */}
-        <div className="bg-surface border border-border rounded-xl shadow-sm p-6 md:col-span-2">
-          <h2 className="text-xl font-heading font-bold mb-4">ID Documents</h2>
-          {!tenant.tenant_documents?.length ? (
-            <p className="text-text-secondary text-sm">No documents uploaded yet</p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {tenant.tenant_documents.map(doc => (
-                <button
-                  key={doc.id}
-                  onClick={() => setPreviewDoc(doc)}
-                  className="flex flex-col items-center gap-3 p-4 bg-bg border border-border rounded-xl hover:border-accent hover:shadow-md transition-all group"
-                >
-                  <div className="bg-accent/10 text-accent p-4 rounded-lg group-hover:bg-accent group-hover:text-surface transition-colors">
-                    <FileText size={28} />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-semibold text-text-primary leading-tight">
-                      {doc.doc_type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                    </p>
-                    <p className="text-xs text-text-secondary mt-1">
-                      {new Date(doc.uploaded_at).toLocaleDateString('en-IN')}
-                    </p>
-                  </div>
-                  <span className="text-xs text-accent font-medium group-hover:underline">View →</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* ID Documents — admin only */}
+        {isAdmin && (
+          <div className="bg-surface border border-border rounded-xl shadow-sm p-6 md:col-span-2">
+            <h2 className="text-xl font-heading font-bold mb-4">ID Documents</h2>
+            {!tenant.tenant_documents?.length ? (
+              <p className="text-text-secondary text-sm">No documents uploaded yet</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {tenant.tenant_documents.map(doc => (
+                  <button
+                    key={doc.id}
+                    onClick={() => setPreviewDoc(doc)}
+                    className="flex flex-col items-center gap-3 p-4 bg-bg border border-border rounded-xl hover:border-accent hover:shadow-md transition-all group"
+                  >
+                    <div className="bg-accent/10 text-accent p-4 rounded-lg group-hover:bg-accent group-hover:text-surface transition-colors">
+                      <FileText size={28} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-text-primary leading-tight">
+                        {doc.doc_type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                      </p>
+                      <p className="text-xs text-text-secondary mt-1">
+                        {new Date(doc.uploaded_at).toLocaleDateString('en-IN')}
+                      </p>
+                    </div>
+                    <span className="text-xs text-accent font-medium group-hover:underline">View →</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

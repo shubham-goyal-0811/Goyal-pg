@@ -3,11 +3,11 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
+const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 
 router.use(authMiddleware);
-router.use(roleCheck('admin'));
 
-router.get('/', async (req, res) => {
+router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
     const { data: settings, error } = await supabase
       .from('settings')
@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.patch('/', async (req, res) => {
+router.patch('/', roleCheck(ADMIN_ONLY), async (req, res) => {
   const { electricity_rate_per_unit, total_parking_spots } = req.body;
   try {
     // Assuming there's only one settings row with id = 1
