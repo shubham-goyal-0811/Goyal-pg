@@ -13,8 +13,11 @@ const OnboardingWizard = () => {
   const [submitting, setSubmitting] = useState(false)
   const [rooms, setRooms] = useState([])
 
+  const [lastReading, setLastReading] = useState(null)
+
   const [state, setState] = useState({
     roomId: searchParams.get('room') || '',
+    meterReading: '',
     tenantDetails: {
       full_name: '',
       phone_number: '',
@@ -34,6 +37,15 @@ const OnboardingWizard = () => {
       .then(res => setRooms(res))
       .catch(() => toast.error('Failed to load rooms'))
   }, [])
+
+  // Show the room's last meter reading so a typo is obvious before it becomes
+  // the baseline every future bill is measured against.
+  useEffect(() => {
+    if (!state.roomId) { setLastReading(null); return }
+    api.get(`/rooms/${state.roomId}/meter-readings`)
+      .then(rows => setLastReading(rows?.[0] ?? null))
+      .catch(() => setLastReading(null))
+  }, [state.roomId])
 
   const handleNext = () => setStep(s => s + 1)
   const handleBack = () => setStep(s => s - 1)
@@ -73,10 +85,27 @@ const OnboardingWizard = () => {
   }
 
   const submit = async () => {
+    // The API rejects a check-in reading lower than the room's last one. Confirm
+    // here rather than letting the admin lose four steps of work to a 400.
+    const readingGoesBackwards = lastReading
+      && state.meterReading !== ''
+      && Number(state.meterReading) < lastReading.reading_value
+
+    if (readingGoesBackwards && !window.confirm(
+      `The meter reading (${state.meterReading}) is lower than this room's last reading ` +
+      `(${lastReading.reading_value} on ${lastReading.reading_date}).\n\n` +
+      `That period will be skipped when bills are generated. Only continue if the meter ` +
+      `was actually reset or replaced.\n\nOnboard anyway?`
+    )) return
+
     setSubmitting(true)
     try {
       const tenantRes = await api.post('/tenants', {
         room_id: Number(state.roomId),
+        // Recorded server-side BEFORE the tenant row is created, so the closing
+        // period is billed to the existing occupants only.
+        meter_reading: state.meterReading === '' ? undefined : Number(state.meterReading),
+        ...(readingGoesBackwards ? { allow_lower: true } : {}),
         full_name: state.tenantDetails.full_name,
         phone_number: state.tenantDetails.phone_number,
         parent_contact: state.tenantDetails.parent_contact || null,
@@ -143,6 +172,41 @@ const OnboardingWizard = () => {
                 )
               })}
             </select>
+            {state.roomId && (
+              <div className="pt-2 space-y-2">
+                <label className="block text-sm font-medium text-text-primary">
+                  Current Meter Reading
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 14502"
+                  className={inputCls}
+                  value={state.meterReading}
+                  onChange={e => setState({ ...state, meterReading: e.target.value })}
+                />
+                {lastReading ? (
+                  <p className="text-xs text-text-secondary">
+                    Last recorded: <span className="font-semibold text-text-primary">{lastReading.reading_value}</span>
+                    {' '}on {new Date(lastReading.reading_date).toLocaleDateString('en-IN')}
+                  </p>
+                ) : (
+                  <p className="text-xs text-text-secondary">
+                    No reading recorded for this room yet — this becomes the opening baseline.
+                  </p>
+                )}
+                {lastReading && state.meterReading !== '' && Number(state.meterReading) < lastReading.reading_value && (
+                  <p className="text-xs text-warning">
+                    Lower than the last reading ({lastReading.reading_value}) — check for a typo.
+                  </p>
+                )}
+                <p className="text-xs text-text-secondary">
+                  Recorded against the tenants already in this room, closing their period before
+                  the new tenant starts sharing the bill. Skipping it means the incoming tenant
+                  is charged for electricity used before they moved in.
+                </p>
+              </div>
+            )}
             <button onClick={handleNext} disabled={!state.roomId} className={btnPrimary}>Next</button>
           </div>
         )}

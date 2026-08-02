@@ -4,6 +4,7 @@ const supabase = require('../config/supabase');
 const roleCheck = require('../middleware/roleCheck');
 const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
+const { rejectionIfBackwards } = require('../services/meterReadings');
 
 // NOTE: this router is mounted under routes/rooms.js, which already applies
 // authMiddleware. Mounting it anywhere else requires applying auth there too.
@@ -26,17 +27,27 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res) =
 
 // POST /rooms/:id/meter-readings
 router.post('/', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
-  const { reading_date, reading_value, triggered_by } = req.body;
+  const { reading_date, reading_value, triggered_by, allow_lower } = req.body;
   const roomId = req.params.id;
 
   // ── Input validation ────────────────────────────────────────────────
   if (!reading_date) return res.status(400).json({ error: 'reading_date is required' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(reading_date)) {
+    return res.status(400).json({ error: 'reading_date must be in YYYY-MM-DD format' });
+  }
   if (reading_value === undefined || reading_value === null || isNaN(Number(reading_value)) || Number(reading_value) < 0) {
     return res.status(400).json({ error: 'reading_value must be a non-negative number' });
   }
   // ────────────────────────────────────────────────────────────────────
 
   try {
+    // Refuse a reading that goes backwards unless the caller has explicitly
+    // confirmed the meter was reset or replaced.
+    if (!allow_lower) {
+      const rejection = await rejectionIfBackwards(roomId, reading_date, reading_value);
+      if (rejection) return res.status(400).json({ error: rejection, code: 'READING_WENT_BACKWARDS' });
+    }
+
     // 1. Snapshot active tenants in this room
     const { data: tenants, error: tenantsError } = await supabase
       .from('tenants')

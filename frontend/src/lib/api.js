@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
+import { API_BASE_URL } from './env'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+const API_BASE = API_BASE_URL
 
 // ── Token Cache ──────────────────────────────────────────────────────────────
 // Avoids a Supabase gateway round-trip on every single api.get/post/patch call.
@@ -37,6 +38,12 @@ export const invalidateTokenCache = () => {
 // - Mutating calls (POST / PATCH) automatically bust related cache keys.
 
 const _cache = new Map() // key → { data, expiresAt (ms) }
+
+// In-flight GETs, so two components mounting in the same tick share one
+// request. The response cache alone can't prevent this — it isn't populated
+// until the first response lands, by which point the duplicate has already
+// gone out.
+const _inflight = new Map() // key → Promise
 
 // TTL rules (longest match wins)
 const TTL_RULES = [
@@ -79,9 +86,12 @@ const cacheBust = (...prefixes) => {
 const bustRelated = (endpoint) => {
   if (endpoint.startsWith('/rooms'))               cacheBust('/rooms')
   if (endpoint.startsWith('/settings'))            cacheBust('/settings')
-  if (endpoint.startsWith('/tenants'))             cacheBust('/tenants', '/police-verification')
+  if (endpoint.startsWith('/tenants'))             cacheBust('/tenants', '/police-verification', '/rooms')
   if (endpoint.startsWith('/gate-log'))            cacheBust('/gate-log')
   if (endpoint.startsWith('/police-verification')) cacheBust('/police-verification')
+  // Generating bills and marking rent paid both change the rent status the
+  // dashboard renders per room, which is served by the 5-minute /rooms cache.
+  if (endpoint.startsWith('/rent'))                cacheBust('/rooms', '/tenants')
 }
 
 // ── Errors ───────────────────────────────────────────────────────────────────
@@ -120,15 +130,29 @@ export const api = {
       if (cached !== null) return cached
     }
 
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      headers: await getHeaders()
-    })
-    if (!res.ok) await throwApiError(res)
-    const data = await res.json()
+    // Already fetching this exact endpoint — join that request instead of
+    // firing a second one.
+    const pending = _inflight.get(endpoint)
+    if (pending) return pending
 
-    // Store in cache
-    cacheSet(endpoint, data, ttl)
-    return data
+    const request = (async () => {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        headers: await getHeaders()
+      })
+      if (!res.ok) await throwApiError(res)
+      const data = await res.json()
+
+      // Store in cache
+      cacheSet(endpoint, data, ttl)
+      return data
+    })()
+
+    _inflight.set(endpoint, request)
+    try {
+      return await request
+    } finally {
+      _inflight.delete(endpoint)
+    }
   },
 
   post: async (endpoint, data) => {

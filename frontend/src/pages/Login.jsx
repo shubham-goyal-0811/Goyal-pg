@@ -2,16 +2,25 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { hasAccess } from '../lib/roles'
+import AccessDenied from './AccessDenied'
 
 const Login = () => {
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   const navigate = useNavigate()
 
+  // Only bounce into the app when the account can actually use it. Redirecting
+  // on `user` alone sent no-access accounts to /, which sent them straight back
+  // here — an infinite loop with no reachable sign-out.
   useEffect(() => {
-    if (user) {
+    if (user && hasAccess(role)) {
       navigate('/')
     }
-  }, [user, navigate])
+  }, [user, role, navigate])
+
+  // Signed in, but not permitted. Show the terminal screen rather than a login
+  // button that would do nothing.
+  if (user && !hasAccess(role)) return <AccessDenied />
 
   const handleLogin = async () => {
     // For dummy dev purposes, if API keys aren't real, just mock the login by pushing to state or show error

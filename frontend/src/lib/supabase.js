@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './env'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// env.js throws in a production build if either of these is missing, rather
+// than letting createClient(undefined, undefined) fail cryptically later.
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)

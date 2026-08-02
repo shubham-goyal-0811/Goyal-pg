@@ -31,18 +31,23 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
 
     const formattedRooms = rooms.map(room => {
       const activeTenants = room.tenants.filter(t => t.status === 'active');
-      // Use IST offset (+5:30) explicitly to avoid UTC day-rollover mismatches
-      const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
       return {
         ...room,
         active_tenants_count: activeTenants.length,
         tenants: activeTenants.map(t => {
-          const currentRent = t.rent_payments.find(r => r.billing_month === currentMonth);
+          // Report the most recent bill, not the current calendar month's.
+          // Bills are generated once a month closes and its final meter reading
+          // is in, so the month in progress has no row yet — matching on it
+          // made every tenant read "pending" forever. 'none' distinguishes
+          // "nothing billed yet" from "billed and unpaid".
+          const latest = (t.rent_payments || [])
+            .slice()
+            .sort((a, b) => String(b.billing_month).localeCompare(String(a.billing_month)))[0];
           return {
             id: t.id,
             full_name: t.full_name,
-            rent_status: currentRent ? currentRent.status : 'pending'
+            rent_status: latest ? latest.status : 'none',
+            rent_month: latest ? latest.billing_month : null
           };
         })
       };

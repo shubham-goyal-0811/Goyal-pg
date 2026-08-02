@@ -4,6 +4,7 @@ const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
+const { invalidateRateCache } = require('../services/electricity');
 
 router.use(authMiddleware);
 
@@ -33,6 +34,8 @@ router.patch('/', roleCheck(ADMIN_ONLY), async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    invalidateRateCache(); // so the new rate applies to the next rent run immediately
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });
