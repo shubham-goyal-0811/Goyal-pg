@@ -1,0 +1,6 @@
+# SPA fallback for Netlify / Cloudflare Pages.
+# React Router owns every path, but the host only has index.html on disk — a
+# hard refresh on /tenants or /settings 404s without this. Vercel is covered by
+# vercel.json instead; this file is harmless there.
+# Static assets are served before rewrites, so /assets/* is unaffected.
+/*  /index.html  200

@@ -1,9 +1,10 @@
 // Node 24+ has native fetch built-in — no import needed
+const env = require('../config/env');
 
 const VISION_API_URL = 'https://vision.googleapis.com/v1/images:annotate';
 
 const parseAadhaarOCR = async (fileBuffer, mimetype) => {
-  const apiKey = process.env.GOOGLE_CLOUD_VISION_API_KEY;
+  const apiKey = env.GOOGLE_CLOUD_VISION_API_KEY;
 
   if (!apiKey || apiKey === 'dummy-vision-api-key') {
     console.warn('[OCR] No Vision API key set. Returning empty fields.');
@@ -45,7 +46,7 @@ const parseAadhaarOCR = async (fileBuffer, mimetype) => {
 
     const ocrFields = extractAadhaarFields(rawText);
     // Debug-only — never log PII in production
-    if (process.env.NODE_ENV !== 'production') {
+    if (!env.isProduction) {
       console.log('[OCR] Raw extracted text:\n', rawText);
       console.log('[OCR] Parsed fields:', ocrFields);
     }

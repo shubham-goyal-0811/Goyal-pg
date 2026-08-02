@@ -48,11 +48,20 @@ const RoomCard = ({ room }) => {
                   {tenant.full_name}
                   <ExternalLink size={12} className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
                 </button>
-                <span className={`
-                  text-xs font-semibold px-2 py-1 rounded
-                  ${tenant.rent_status === 'paid' ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'}
-                `}>
-                  {tenant.rent_status?.toUpperCase()}
+                <span
+                  title={tenant.rent_month
+                    ? `${new Date(tenant.rent_month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} bill`
+                    : 'No bill generated yet'}
+                  className={`
+                    text-xs font-semibold px-2 py-1 rounded whitespace-nowrap
+                    ${tenant.rent_status === 'paid'
+                      ? 'bg-success/20 text-success'
+                      : tenant.rent_status === 'none'
+                        ? 'bg-text-secondary/10 text-text-secondary'
+                        : 'bg-warning/20 text-warning'}
+                  `}
+                >
+                  {tenant.rent_status === 'none' ? 'NO BILL' : tenant.rent_status?.toUpperCase()}
                 </span>
               </>
             ) : (

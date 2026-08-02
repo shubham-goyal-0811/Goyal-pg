@@ -77,7 +77,10 @@ CREATE TABLE rent_payments (
   status payment_status NOT NULL DEFAULT 'pending',
   paid_date date,
   created_at timestamp with time zone DEFAULT now(),
-  updated_at timestamp with time zone DEFAULT now()
+  updated_at timestamp with time zone DEFAULT now(),
+  -- Rent generation upserts on this pair so re-running a month is safe.
+  -- Without the constraint the upsert fails outright (42P10).
+  CONSTRAINT rent_payments_tenant_month_key UNIQUE (tenant_id, billing_month)
 );
 
 CREATE TYPE reading_trigger AS ENUM ('routine', 'checkout');
@@ -85,11 +88,12 @@ CREATE TABLE meter_readings (
   id serial PRIMARY KEY,
   room_id int REFERENCES rooms(id),
   reading_date date NOT NULL,
-  reading_value int NOT NULL,
+  reading_value int NOT NULL CHECK (reading_value >= 0),
   active_tenant_ids int[] NOT NULL,
   triggered_by reading_trigger NOT NULL DEFAULT 'routine',
   created_at timestamp with time zone DEFAULT now()
 );
+CREATE INDEX meter_readings_room_date_idx ON meter_readings (room_id, reading_date);
 
 CREATE TABLE gate_log (
   id serial PRIMARY KEY,

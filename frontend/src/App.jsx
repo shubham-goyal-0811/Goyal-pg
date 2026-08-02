@@ -1,7 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
+import { hasAccess, ROLES } from './lib/roles'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import AccessDenied from './pages/AccessDenied'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import PoliceVerification from './pages/PoliceVerification'
@@ -14,13 +16,18 @@ import MeterReading from './pages/MeterReading'
 
 const ProtectedRoute = ({ children }) => {
   const { user, role } = useAuth()
-  if (!user || !role || role === 'viewer') return <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/login" replace />
+  // Render AccessDenied in place rather than redirecting to /login — Login
+  // redirects any signed-in user back here, which looped forever.
+  if (!hasAccess(role)) return <AccessDenied />
   return <Layout>{children}</Layout>
 }
 
 const AdminRoute = ({ children }) => {
   const { user, role } = useAuth()
-  if (!user || role !== 'admin') return <Navigate to="/" replace />
+  if (!user) return <Navigate to="/login" replace />
+  if (!hasAccess(role)) return <AccessDenied />
+  if (role !== ROLES.ADMIN) return <Navigate to="/" replace />
   return <Layout>{children}</Layout>
 }
 

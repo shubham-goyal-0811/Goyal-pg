@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
@@ -10,37 +10,27 @@ const Tenants = () => {
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const debounceRef = useRef(null)
 
-  // Initial load — all active tenants
+  // Single effect for both the initial load and search. Previously a separate
+  // mount effect fired /tenants at the same time this one did with an empty
+  // query — two identical requests on every visit to the page.
   useEffect(() => {
-    api.get('/tenants')
-      .then(res => setTenants(res))
-      .catch(() => toast.error('Failed to load tenants'))
-      .finally(() => setLoading(false))
-  }, [])
+    const q = query.trim()
 
-  // Debounced search
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-
-    if (!query.trim()) {
-      // Reset to all active tenants
+    const run = () => {
       setSearching(true)
-      api.get('/tenants')
+      api.get(q ? `/tenants?search=${encodeURIComponent(q)}` : '/tenants')
         .then(res => setTenants(res))
-        .catch(() => toast.error('Search failed'))
-        .finally(() => setSearching(false))
-      return
+        .catch(() => toast.error(q ? 'Search failed' : 'Failed to load tenants'))
+        .finally(() => { setSearching(false); setLoading(false) })
     }
 
-    debounceRef.current = setTimeout(() => {
-      setSearching(true)
-      api.get(`/tenants?search=${encodeURIComponent(query.trim())}`)
-        .then(res => setTenants(res))
-        .catch(() => toast.error('Search failed'))
-        .finally(() => setSearching(false))
-    }, 400)
+    // The unfiltered list is cached client-side, so clearing the box shouldn't
+    // wait 400ms. Only real search terms need debouncing.
+    if (!q) { run(); return }
+
+    const timer = setTimeout(run, 400)
+    return () => clearTimeout(timer)
   }, [query])
 
   if (loading) {

@@ -14,6 +14,7 @@
  * a shared store (Redis) for the budgets to mean anything.
  */
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const env = require('../config/env');
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -29,7 +30,7 @@ const userOrIpKey = (req) => (req.user?.id ? `u:${req.user.id}` : ipKeyGenerator
 
 const apiLimiter = rateLimit({
   windowMs: WINDOW_MS,
-  limit: Number(process.env.RATE_LIMIT_MAX || 500),
+  limit: env.RATE_LIMIT_MAX,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: userOrIpKey,
@@ -38,11 +39,25 @@ const apiLimiter = rateLimit({
 
 const uploadLimiter = rateLimit({
   windowMs: WINDOW_MS,
-  limit: Number(process.env.RATE_LIMIT_UPLOAD_MAX || 40),
+  limit: env.RATE_LIMIT_UPLOAD_MAX,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: userOrIpKey,
   handler: tooMany('Too many document uploads. Please wait a few minutes and try again.'),
 });
 
-module.exports = { apiLimiter, uploadLimiter };
+/**
+ * /health/db touches Postgres, so it can't sit wide open the way /health does.
+ * Generous enough for any sane keep-alive schedule (a 1-minute cron uses 15 of
+ * these per window) while capping how much DB load a stranger can generate.
+ */
+const healthLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: env.RATE_LIMIT_HEALTH_MAX,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: userOrIpKey,
+  handler: tooMany('Too many health checks.'),
+});
+
+module.exports = { apiLimiter, uploadLimiter, healthLimiter };

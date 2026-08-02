@@ -1,11 +1,13 @@
-require('dotenv').config();
+// Must be first — loads .env.<NODE_ENV> / .env and fails fast on bad config.
+const env = require('./config/env');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const multer = require('multer');
 const cron = require('node-cron');
 const runReminderCron = require('./jobs/rentReminder');
-const { apiLimiter } = require('./middleware/rateLimit');
+const supabase = require('./config/supabase');
+const { apiLimiter, healthLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 
@@ -15,7 +17,7 @@ const app = express();
 // number of proxies actually in front of this app. Never set it higher than
 // the real hop count: clients can forge extra X-Forwarded-For entries beyond
 // that and mint a fresh rate-limit key per request.
-app.set('trust proxy', Number(process.env.TRUST_PROXY || 0));
+app.set('trust proxy', env.TRUST_PROXY);
 
 app.use(helmet({
   // This is a JSON API called from the frontend's origin. Access is governed
@@ -25,16 +27,39 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || 'http://localhost:5173',
+  // ALLOWED_ORIGIN is comma-separated, so production and a preview deploy can
+  // both be permitted without a code change. Requests with no Origin header
+  // (curl, server-to-server, the keep-alive cron) are allowed through — CORS
+  // only governs browsers, and auth still applies to everything.
+  origin: (origin, callback) => {
+    if (!origin || env.ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-const PORT = process.env.PORT || 5000;
+const PORT = env.PORT;
 
-// Ahead of the limiter so uptime monitors don't consume the request budget.
+// Liveness. Never touches the database — use this to keep a sleeping web host
+// (Render/Fly free tier) warm. Ahead of the limiter so pings don't consume the
+// request budget.
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Readiness. Runs one trivial query, which is what actually counts as activity
+// against a free-tier Supabase project — /health alone never reaches Postgres,
+// so pinging it will NOT stop the database from pausing. Returns no data.
+app.get('/health/db', healthLimiter, async (req, res) => {
+  try {
+    const { error } = await supabase.from('settings').select('id').limit(1);
+    if (error) throw error;
+    res.json({ status: 'ok', db: 'ok' });
+  } catch (err) {
+    console.error('[health/db]', err.message);
+    res.status(503).json({ status: 'degraded', db: 'error' });
+  }
 });
 
 app.use(apiLimiter);
@@ -58,7 +83,7 @@ app.use('/rooms', roomsRouter);
 app.use('/tenants', tenantsRouter);
 app.use('/tenants/:id/documents', documentsRouter);
 app.use('/tenants/:id/rent', rentRouter.tenantRentRouter);
-app.use('/rent', rentRouter.markPaidRouter);
+app.use('/rent', rentRouter.rentRouter);
 app.use('/police-verification', policeVerificationRouter);
 app.use('/gate-log', gateLogRouter);
 app.use('/settings', settingsRouter);
@@ -82,15 +107,29 @@ app.use((err, req, res, next) => {
   if (typeof err?.message === 'string' && err.message.startsWith('Invalid file type')) {
     return res.status(400).json({ error: err.message });
   }
+  // A blocked CORS origin is a configuration mismatch, not a server fault.
+  // Answering 500 made a missing ALLOWED_ORIGIN look like a backend crash.
+  if (typeof err?.message === 'string' && err.message.includes('not allowed by CORS')) {
+    console.warn('[cors]', err.message);
+    return res.status(403).json({ error: 'Origin not allowed' });
+  }
   console.error('[unhandled]', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start cron
+// Daily rent reminders at 9am. The timezone is explicit because hosts run on
+// UTC — without it this fires at 2:30pm IST.
 cron.schedule('0 9 * * *', () => {
   runReminderCron();
-});
+}, { timezone: env.CRON_TIMEZONE });
 
 app.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
+  // Echo the resolved config so a misconfigured deploy is obvious in the logs
+  // rather than showing up later as a browser CORS error. No secrets here.
+  console.log(`Backend listening on ${PORT}`);
+  console.log(`  env          ${env.NODE_ENV}`);
+  console.log(`  cors origins ${env.ALLOWED_ORIGINS.join(', ') || '(none)'}`);
+  console.log(`  trust proxy  ${env.TRUST_PROXY}`);
+  console.log(`  cron tz      ${env.CRON_TIMEZONE}`);
+  console.log(`  vision ocr   ${env.GOOGLE_CLOUD_VISION_API_KEY ? 'configured' : 'not configured (fields blank)'}`);
 });

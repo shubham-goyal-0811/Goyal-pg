@@ -1,13 +1,8 @@
-require('dotenv').config();
+// Requiring env first loads .env.<NODE_ENV> then .env, and validates that
+// everything required is present — including these two.
+const env = require('./env');
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('[Supabase] Missing required env vars: SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY');
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
 module.exports = supabase;

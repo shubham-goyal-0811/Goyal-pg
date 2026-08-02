@@ -4,7 +4,8 @@ const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { ROLES, ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
-const { calculateElectricityCharges } = require('../services/electricity');
+const { generateRent, isBillingMonth, TENANT_BILLING_SELECT } = require('../services/rent');
+const { rejectionIfBackwards } = require('../services/meterReadings');
 const { validateId, sanitizeSearch } = require('../middleware/validate');
 
 router.use(authMiddleware);
@@ -15,7 +16,8 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
     const {
       room_id, full_name, phone_number, parent_contact, address,
       id_proof_type, id_proof_number,
-      ac_opted, has_vehicle, vehicle_number, check_in_date
+      ac_opted, has_vehicle, vehicle_number, check_in_date,
+      meter_reading, allow_lower
     } = req.body;
 
     // ── Input validation ────────────────────────────────────────────────
@@ -24,7 +26,45 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
     if (!room_id || isNaN(Number(room_id))) return res.status(400).json({ error: 'valid room_id is required' });
     if (!check_in_date)        return res.status(400).json({ error: 'check_in_date is required' });
     if (new Date(check_in_date) > new Date()) return res.status(400).json({ error: 'check_in_date cannot be in the future' });
+
+    const hasReading = meter_reading !== undefined && meter_reading !== null && meter_reading !== '';
+    if (hasReading && (isNaN(Number(meter_reading)) || Number(meter_reading) < 0)) {
+      return res.status(400).json({ error: 'meter_reading must be a non-negative number' });
+    }
     // ────────────────────────────────────────────────────────────────────
+
+    // Record the check-in reading BEFORE the tenant row exists. The reading
+    // snapshots whoever is active in the room right now, and that snapshot is
+    // who pays for the period it closes — the period that ran up to today,
+    // before this tenant arrived. Insert the tenant first and they get billed
+    // for electricity burned before they moved in.
+    if (hasReading) {
+      // Same guard as POST /rooms/:id/meter-readings. This path matters more,
+      // not less: a check-in reading is often the baseline every later bill for
+      // the room is measured against.
+      if (!allow_lower) {
+        const rejection = await rejectionIfBackwards(Number(room_id), check_in_date, Number(meter_reading));
+        if (rejection) return res.status(400).json({ error: rejection, code: 'READING_WENT_BACKWARDS' });
+      }
+
+      const { data: roomMates, error: mateErr } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('room_id', Number(room_id))
+        .eq('status', 'active');
+      if (mateErr) throw mateErr;
+
+      const { error: readingErr } = await supabase
+        .from('meter_readings')
+        .insert([{
+          room_id: Number(room_id),
+          reading_date: check_in_date,
+          reading_value: Number(meter_reading),
+          active_tenant_ids: roomMates.map(t => t.id),
+          triggered_by: 'routine'
+        }]);
+      if (readingErr) throw readingErr;
+    }
 
     const { data: tenant, error } = await supabase
       .from('tenants')
@@ -178,46 +218,29 @@ router.post('/:id/generate-rent', roleCheck(ADMIN_ONLY), validateId(), async (re
     const tenantId = Number(req.params.id);
     const { billing_month } = req.body; // e.g. '2025-07'
 
-    if (!billing_month || !/^\d{4}-\d{2}$/.test(billing_month)) {
+    if (!isBillingMonth(billing_month)) {
       return res.status(400).json({ error: 'billing_month required in YYYY-MM format' });
     }
 
-    // Fetch tenant + room pricing
     const { data: tenant, error: tErr } = await supabase
       .from('tenants')
-      .select('id, room_id, ac_opted, rooms(seat_rent, ac_charge)')
+      .select(TENANT_BILLING_SELECT)
       .eq('id', tenantId)
       .single();
     if (tErr || !tenant) return res.status(404).json({ error: 'Tenant not found' });
 
-    const seat_rent = Number(tenant.rooms.seat_rent);
-    const ac_charge = tenant.ac_opted ? Number(tenant.rooms.ac_charge) : 0;
+    const result = await generateRent([tenant], billing_month);
 
-    // Calculate electricity share for this tenant this month
-    const allCharges = await calculateElectricityCharges(tenant.room_id, billing_month);
-    const electricity_charge = Number((allCharges[tenantId] || 0).toFixed(2));
+    if (result.generated === 0) {
+      const why = result.skipped[0]?.reason === 'already_paid'
+        ? 'This month is already marked paid for this tenant.'
+        : 'Nothing to generate.';
+      return res.status(409).json({ error: why, ...result });
+    }
 
-    const total_amount = seat_rent + ac_charge + electricity_charge;
-    const billing_month_date = `${billing_month}-01`;
-
-    // Upsert so re-running is safe (e.g. meter reading added after first generation)
-    const { data: payment, error: pErr } = await supabase
-      .from('rent_payments')
-      .upsert({
-        tenant_id: tenantId,
-        billing_month: billing_month_date,
-        seat_rent,
-        ac_charge,
-        electricity_charge,
-        total_amount,
-        amount_paid: 0,
-        status: 'pending'
-      }, { onConflict: 'tenant_id,billing_month' })
-      .select()
-      .single();
-
-    if (pErr) throw pErr;
-    res.status(201).json(payment);
+    // warnings is non-empty when the room's readings couldn't produce a charge,
+    // so a Rs0 electricity line is visibly explained rather than silently wrong.
+    res.status(201).json({ ...result.rows[0], warnings: result.warnings });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

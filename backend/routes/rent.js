@@ -4,14 +4,15 @@ const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { ADMIN_ONLY } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
+const { generateRent, isBillingMonth, TENANT_BILLING_SELECT } = require('../services/rent');
 
 const tenantRentRouter = express.Router({ mergeParams: true });
-const markPaidRouter = express.Router();
+const rentRouter = express.Router();
 
 tenantRentRouter.use(authMiddleware);
 tenantRentRouter.use(roleCheck(ADMIN_ONLY));
-markPaidRouter.use(authMiddleware);
-markPaidRouter.use(roleCheck(ADMIN_ONLY));
+rentRouter.use(authMiddleware);
+rentRouter.use(roleCheck(ADMIN_ONLY));
 
 // GET /tenants/:id/rent
 tenantRentRouter.get('/', validateId(), async (req, res) => {
@@ -29,13 +30,39 @@ tenantRentRouter.get('/', validateId(), async (req, res) => {
   }
 });
 
+// POST /rent/generate — bill every active tenant for a month in one pass.
+// Body: { billing_month: 'YYYY-MM' }
+// Doing this per-tenant meant 20 requests and re-running the same room's
+// electricity split once per seat.
+rentRouter.post('/generate', async (req, res) => {
+  try {
+    const { billing_month } = req.body;
+
+    if (!isBillingMonth(billing_month)) {
+      return res.status(400).json({ error: 'billing_month required in YYYY-MM format' });
+    }
+
+    const { data: tenants, error } = await supabase
+      .from('tenants')
+      .select(TENANT_BILLING_SELECT)
+      .eq('status', 'active');
+
+    if (error) throw error;
+
+    const result = await generateRent(tenants || [], billing_month);
+    res.status(201).json({ billing_month, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /rent/:paymentId/mark-paid
-markPaidRouter.post('/:paymentId/mark-paid', validateId('paymentId'), async (req, res) => {
+rentRouter.post('/:paymentId/mark-paid', validateId('paymentId'), async (req, res) => {
   try {
     // Verify the payment exists before updating
     const { data: existing, error: lookupError } = await supabase
       .from('rent_payments')
-      .select('id, status')
+      .select('id, status, total_amount')
       .eq('id', req.params.paymentId)
       .single();
 
@@ -62,4 +89,4 @@ markPaidRouter.post('/:paymentId/mark-paid', validateId('paymentId'), async (req
   }
 });
 
-module.exports = { tenantRentRouter, markPaidRouter };
+module.exports = { tenantRentRouter, rentRouter };
