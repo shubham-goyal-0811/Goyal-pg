@@ -1,0 +1,25 @@
+# Netlify build config, versioned so it can't drift from the dashboard.
+#
+# Without this, Netlify had no build command and published `frontend/` itself —
+# the raw source tree. index.html points at /src/main.jsx, which only exists as
+# JSX before a build, so the browser 404s on it, React never mounts, and the
+# page renders blank with no requests to the API at all.
+
+[build]
+  # Everything below is resolved relative to this directory.
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Mirrors frontend/package.json engines. Netlify's default major moves over
+  # time; pin it so a build that works today still works in six months.
+  NODE_VERSION = "24"
+
+# React Router owns every path, but the host only has index.html on disk — a
+# hard refresh on /tenants or /settings 404s without this. Static assets are
+# matched before redirects, so /assets/* is unaffected.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
