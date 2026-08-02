@@ -1,0 +1,4 @@
+# Claude Code local state. Holds settings.local.json and, more importantly,
+# .claude/worktrees/ — full checkouts of this repo. Committing that nests the
+# repository inside itself.
+.claude/

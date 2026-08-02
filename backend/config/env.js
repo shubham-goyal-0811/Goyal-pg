@@ -76,6 +76,9 @@ const env = {
   RATE_LIMIT_MAX: num('RATE_LIMIT_MAX', 500),
   RATE_LIMIT_UPLOAD_MAX: num('RATE_LIMIT_UPLOAD_MAX', 40),
   RATE_LIMIT_HEALTH_MAX: num('RATE_LIMIT_HEALTH_MAX', 60),
+  // Per HOUR, not per 15 minutes — see middleware/rateLimit.js. A real family
+  // enquiring about a room sends one message; five is already generous.
+  RATE_LIMIT_ENQUIRY_MAX: num('RATE_LIMIT_ENQUIRY_MAX', 5),
 
   ROLE_CACHE_TTL_MS: num('ROLE_CACHE_TTL_MS', 60_000),
 

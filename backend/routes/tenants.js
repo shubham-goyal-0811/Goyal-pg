@@ -6,7 +6,9 @@ const roleCheck = require('../middleware/roleCheck');
 const { ROLES, ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { generateRent, isBillingMonth, TENANT_BILLING_SELECT } = require('../services/rent');
 const { rejectionIfBackwards } = require('../services/meterReadings');
-const { validateId, sanitizeSearch } = require('../middleware/validate');
+const { validateId, sanitizeSearch, normalizeEmail } = require('../middleware/validate');
+
+const { invalidateRole } = roleCheck;
 
 router.use(authMiddleware);
 
@@ -117,11 +119,15 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
 // GET /tenants/:id
 // Admins get the full record. Gatekeepers get identity + room only — no
 // ID-proof numbers, no document scans, no rent history, no home address.
+// portal_user is the Google account currently linked to this tenant, if any.
+// Surfacing its real display name next to the admin-typed login_email is the
+// backstop for a typo — a wrong address shows a stranger's name.
 const TENANT_SELECT_ADMIN = `
   *,
   rooms (room_number, floor, seat_rent, ac_charge),
   tenant_documents (*),
-  rent_payments (*)
+  rent_payments (*),
+  portal_user:users!tenants_user_id_fkey (email, full_name)
 `;
 
 const TENANT_SELECT_GATEKEEPER = `
@@ -147,7 +153,8 @@ router.get('/:id', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res
   }
 });
 
-// PATCH /tenants/:id — only whitelisted fields can be updated
+// PATCH /tenants/:id — only whitelisted fields can be updated.
+// login_email is NOT in this list; it has extra rules and is handled below.
 const TENANT_EDITABLE_FIELDS = [
   'full_name', 'phone_number', 'parent_contact', 'address',
   'ac_opted', 'has_vehicle', 'vehicle_number',
@@ -160,6 +167,37 @@ router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
     for (const field of TENANT_EDITABLE_FIELDS) {
       if (req.body[field] !== undefined) safeUpdates[field] = req.body[field];
     }
+
+    // ── Portal access ───────────────────────────────────────────────────────
+    // Granting access is a different kind of edit from correcting a phone
+    // number, so it gets its own rules:
+    //   - must be a syntactically valid address
+    //   - cannot be changed once someone has actually signed in with it;
+    //     revoke first, so the old account is demoted rather than left holding
+    //     a role that no longer maps to anything
+    //   - clearing it goes through POST /:id/revoke-portal, never through here
+    if (req.body.login_email !== undefined) {
+      const email = normalizeEmail(req.body.login_email);
+      if (!email) {
+        return res.status(400).json({ error: 'Enter a valid email address' });
+      }
+
+      const { data: current, error: curErr } = await supabase
+        .from('tenants')
+        .select('user_id')
+        .eq('id', req.params.id)
+        .single();
+      if (curErr) throw curErr;
+
+      if (current.user_id) {
+        return res.status(409).json({
+          error: 'This tenant has already signed in. Revoke portal access first, then set a new email.'
+        });
+      }
+
+      safeUpdates.login_email = email;
+    }
+
     if (Object.keys(safeUpdates).length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
@@ -172,8 +210,56 @@ router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // tenants_login_email_active_key — another ACTIVE tenant already has it.
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Another active tenant is already using that email address' });
+      }
+      throw error;
+    }
     res.json(tenant);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /tenants/:id/revoke-portal
+// Cuts a resident's access to /me. Three things have to happen together or the
+// account is left in a broken half-state: clear the link, clear the invitation,
+// and demote the auth user. Skipping the demotion would leave role='tenant'
+// with nothing to read — routes/me.js self-heals that, but only on their next
+// sign-in, which may never come.
+router.post('/:id/revoke-portal', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
+  try {
+    const { data: tenant, error: readErr } = await supabase
+      .from('tenants')
+      .select('user_id, login_email')
+      .eq('id', req.params.id)
+      .single();
+    if (readErr) throw readErr;
+
+    if (!tenant.user_id && !tenant.login_email) {
+      return res.status(400).json({ error: 'This tenant does not have portal access' });
+    }
+
+    const { error: clearErr } = await supabase
+      .from('tenants')
+      .update({ user_id: null, login_email: null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+    if (clearErr) throw clearErr;
+
+    if (tenant.user_id) {
+      // Only ever demotes 'tenant'. If this account was separately promoted to
+      // admin or gatekeeper, revoking portal access must not strip that.
+      await supabase
+        .from('users')
+        .update({ role: ROLES.VIEWER })
+        .eq('id', tenant.user_id)
+        .eq('role', ROLES.TENANT);
+      invalidateRole(tenant.user_id);
+    }
+
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

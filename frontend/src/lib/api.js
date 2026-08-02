@@ -52,6 +52,10 @@ const TTL_RULES = [
   { match: '/tenants',  ttl: 30 * 1000 },        // 30 s
   { match: '/gate-log', ttl: 30 * 1000 },        // 30 s
   { match: '/police-verification', ttl: 30 * 1000 },
+  { match: '/enquiries', ttl: 30 * 1000 },
+  // The resident portal. Short, because a bill being marked paid in the office
+  // should show up on the tenant's phone on their next tap, not five minutes on.
+  { match: '/me', ttl: 30 * 1000 },
 ]
 
 const getTTL = (endpoint) => {
@@ -89,6 +93,7 @@ const bustRelated = (endpoint) => {
   if (endpoint.startsWith('/tenants'))             cacheBust('/tenants', '/police-verification', '/rooms')
   if (endpoint.startsWith('/gate-log'))            cacheBust('/gate-log')
   if (endpoint.startsWith('/police-verification')) cacheBust('/police-verification')
+  if (endpoint.startsWith('/enquiries'))           cacheBust('/enquiries')
   // Generating bills and marking rent paid both change the rent status the
   // dashboard renders per room, which is served by the 5-minute /rooms cache.
   if (endpoint.startsWith('/rent'))                cacheBust('/rooms', '/tenants')

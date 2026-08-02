@@ -40,4 +40,23 @@ const sanitizeSearch = (raw) => {
     .substring(0, 100);
 };
 
-module.exports = { validateId, sanitizeSearch };
+/**
+ * Normalize an address for storage/lookup, or return null if it isn't one.
+ *
+ * Lower-casing is not cosmetic here: tenants.login_email is matched with a
+ * plain .eq() by routes/me.js, and is indexed on lower(login_email). Using
+ * .ilike() instead would make '_' and '%' in an address behave as wildcards.
+ *
+ * The pattern is deliberately loose — one @, no spaces, a dot in the domain.
+ * Anything stricter rejects addresses that really exist, and the real proof of
+ * ownership is that the person can sign into Google with it.
+ */
+const normalizeEmail = (raw) => {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim().toLowerCase();
+  if (value.length < 5 || value.length > 254) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return null;
+  return value;
+};
+
+module.exports = { validateId, sanitizeSearch, normalizeEmail };

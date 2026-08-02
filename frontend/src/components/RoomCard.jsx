@@ -9,7 +9,7 @@ const RoomCard = ({ room }) => {
   
   const handleOnboard = (e) => {
     e.stopPropagation()
-    navigate(`/onboarding?room=${room.id}`)
+    navigate(`/admin/onboarding?room=${room.id}`)
   }
 
   // Create array of slots based on capacity
@@ -42,7 +42,7 @@ const RoomCard = ({ room }) => {
             {tenant ? (
               <>
                 <button
-                  onClick={(e) => { e.stopPropagation(); navigate(`/tenants/${tenant.id}`) }}
+                  onClick={(e) => { e.stopPropagation(); navigate(`/admin/tenants/${tenant.id}`) }}
                   className="font-medium truncate pr-2 text-left hover:text-accent transition-colors flex items-center gap-1 group"
                 >
                   {tenant.full_name}

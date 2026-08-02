@@ -1,19 +1,27 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { LayoutDashboard, Users, ShieldCheck, Settings as SettingsIcon, LogOut, Menu, X, BookOpen } from 'lucide-react'
+import { isAdmin } from '../lib/roles'
+import useDocumentTitle from '../hooks/useDocumentTitle'
+import { LayoutDashboard, Users, ShieldCheck, Settings as SettingsIcon, LogOut, Menu, X, BookOpen, Inbox } from 'lucide-react'
 import { useState } from 'react'
 
 const Layout = ({ children }) => {
-  const { signOut } = useAuth()
+  const { signOut, role } = useAuth()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
+  // index.html carries the public marketing title, which is wrong once you're
+  // inside the office app — and worse in the installed PWA's task switcher.
+  useDocumentTitle('Goyal PG — Office')
+
   const navItems = [
-    { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { label: 'Tenants', path: '/tenants', icon: Users },
-    { label: 'Gate Log', path: '/gate-log', icon: BookOpen },
-    { label: 'Police Verification', path: '/police-verification', icon: ShieldCheck },
-    { label: 'Settings', path: '/settings', icon: SettingsIcon },
+    { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
+    { label: 'Tenants', path: '/admin/tenants', icon: Users },
+    { label: 'Gate Log', path: '/admin/gate-log', icon: BookOpen },
+    { label: 'Police Verification', path: '/admin/police-verification', icon: ShieldCheck },
+    // GET /enquiries is ADMIN_ONLY; hide rather than show a link that 403s.
+    ...(isAdmin(role) ? [{ label: 'Enquiries', path: '/admin/enquiries', icon: Inbox }] : []),
+    { label: 'Settings', path: '/admin/settings', icon: SettingsIcon },
   ]
 
   const isActive = (path) => location.pathname === path
@@ -36,7 +44,8 @@ const Layout = ({ children }) => {
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div className="p-6">
-          <h1 className="text-2xl font-heading font-bold text-accent">Goyal PG</h1>
+          <Link to="/admin" className="text-2xl font-heading font-bold text-accent">Goyal PG</Link>
+          <p className="text-xs text-text-secondary mt-0.5">Office</p>
         </div>
         
         <nav className="flex-1 px-4 space-y-2">

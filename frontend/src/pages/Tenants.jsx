@@ -78,7 +78,7 @@ const Tenants = () => {
           {tenants.map(tenant => (
             <button
               key={tenant.id}
-              onClick={() => navigate(`/tenants/${tenant.id}`)}
+              onClick={() => navigate(`/admin/tenants/${tenant.id}`)}
               className="bg-surface border border-border rounded-xl p-5 text-left hover:border-accent hover:shadow-md transition-all group"
             >
               <div className="flex items-start justify-between mb-3">

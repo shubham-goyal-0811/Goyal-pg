@@ -35,8 +35,13 @@ export default defineConfig(({ command, mode }) => {
           enabled: true
         },
         manifest: {
-          name: 'Goyal PG Management',
-          short_name: 'PG Admin',
+          name: 'Goyal PG',
+          short_name: 'Goyal PG',
+          // NOT '/' — that's the public marketing page now, so installing from
+          // it would pin the brochure as the app. /login sends staff to /admin
+          // and residents to /me via HomeRedirect.
+          start_url: '/login',
+          scope: '/',
           theme_color: '#B5495B',
           background_color: '#ffffff',
           display: 'standalone',

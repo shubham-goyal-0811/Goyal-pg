@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 import MeterModal from '../components/MeterModal'
-import { FileText, X, ExternalLink, Loader2 } from 'lucide-react'
+import { FileText, X, ExternalLink, Loader2, KeyRound, CircleCheck, CircleAlert } from 'lucide-react'
 
 // ── Doc Preview Modal ─────────────────────────────────────────────────────────
 const DocPreviewModal = ({ doc, tenantId, onClose }) => {
@@ -61,6 +61,132 @@ const DocPreviewModal = ({ doc, tenantId, onClose }) => {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Portal Access ─────────────────────────────────────────────────────────────
+// Lets an admin hand a resident read-only access to their own record at /me.
+//
+// The one real hazard here is a typo: an email pointing at the wrong person
+// gives a stranger this tenant's rent history and documents. Nothing can
+// validate the address up front, so once the account signs in we show the
+// Google display name it came back with — that is the check the admin makes.
+const PortalAccess = ({ tenant, tenantId, onChange }) => {
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const invited = Boolean(tenant.login_email)
+  const claimed = Boolean(tenant.user_id)
+
+  const grant = async () => {
+    const value = email.trim().toLowerCase()
+    if (!value) return
+    setBusy(true)
+    try {
+      const updated = await api.patch(`/tenants/${tenantId}`, { login_email: value })
+      onChange({ login_email: updated.login_email, user_id: updated.user_id })
+      setEmail('')
+      toast.success('Portal access granted')
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revoke = async () => {
+    if (!window.confirm(`Remove portal access for ${tenant.full_name}? They will be signed out of their account's access on their next request.`)) return
+    setBusy(true)
+    try {
+      await api.post(`/tenants/${tenantId}/revoke-portal`)
+      onChange({ login_email: null, user_id: null, portal_user: null })
+      toast.success('Portal access removed')
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="bg-surface border border-border rounded-xl shadow-sm p-6 md:col-span-2">
+      <div className="flex items-center gap-2 mb-1">
+        <KeyRound size={20} className="text-text-secondary" />
+        <h2 className="text-xl font-heading font-bold">Portal Access</h2>
+      </div>
+      <p className="text-sm text-text-secondary mb-4">
+        Lets this tenant sign in with Google and see their own rent and documents. They cannot change anything.
+      </p>
+
+      {!invited && !claimed && (
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') grant() }}
+            placeholder="tenant's Google email"
+            autoComplete="off"
+            className="flex-1 h-[44px] px-3 bg-bg border border-border rounded-md text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent"
+          />
+          <button
+            onClick={grant}
+            disabled={busy || !email.trim()}
+            className="h-[44px] px-5 bg-accent text-surface rounded-md font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Grant access
+          </button>
+        </div>
+      )}
+
+      {invited && !claimed && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-bg border border-border rounded-md">
+          <div>
+            <p className="font-medium text-text-primary">{tenant.login_email}</p>
+            <p className="text-sm text-text-secondary mt-0.5">
+              Invited — waiting for their first sign-in.
+            </p>
+          </div>
+          <button
+            onClick={revoke}
+            disabled={busy}
+            className="h-[44px] px-4 border border-border rounded-md font-medium text-text-secondary hover:text-warning hover:border-warning disabled:opacity-40"
+          >
+            Remove
+          </button>
+        </div>
+      )}
+
+      {claimed && (
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-bg border border-border rounded-md">
+            <div className="flex items-start gap-3">
+              <CircleCheck size={20} className="text-success shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-text-primary">
+                  {tenant.portal_user?.full_name || 'Signed in'}
+                </p>
+                <p className="text-sm text-text-secondary mt-0.5">
+                  {tenant.portal_user?.email || tenant.login_email}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={revoke}
+              disabled={busy}
+              className="h-[44px] px-4 border border-border rounded-md font-medium text-text-secondary hover:text-warning hover:border-warning disabled:opacity-40"
+            >
+              Revoke access
+            </button>
+          </div>
+          <p className="flex items-start gap-2 text-sm text-text-secondary">
+            <CircleAlert size={16} className="text-warning shrink-0 mt-0.5" />
+            Check that name is really {tenant.full_name}. If it is not, revoke access now — that
+            account can see this tenant's rent history and ID documents.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -189,6 +315,15 @@ const TenantDetail = () => {
             )}
           </ul>
         </div>
+
+        {/* Portal access — admin only */}
+        {isAdmin && (
+          <PortalAccess
+            tenant={tenant}
+            tenantId={id}
+            onChange={(patch) => setTenant(prev => ({ ...prev, ...patch }))}
+          />
+        )}
 
         {/* ID Documents — admin only */}
         {isAdmin && (

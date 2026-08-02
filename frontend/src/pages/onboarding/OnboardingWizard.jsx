@@ -126,7 +126,7 @@ const OnboardingWizard = () => {
       }
 
       toast.success('Tenant onboarded successfully!')
-      navigate('/')
+      navigate('/admin')
     } catch (err) {
       toast.error('Failed to onboard: ' + err.message)
     } finally {

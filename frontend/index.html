@@ -2,12 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/icon-192x192.png" />
     <meta name="theme-color" content="#B5495B" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <!--
+      No maximum-scale / user-scalable=no. Blocking pinch-zoom is a real
+      accessibility failure, and the people reading this page are parents
+      checking a rent figure on a phone.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-    <title>Goyal PG</title>
+
+    <!--
+      This title and description belong to the PUBLIC landing page — they are
+      what a crawler and a WhatsApp link preview read, and neither runs JS.
+      Admin and portal screens override the title at runtime via
+      src/hooks/useDocumentTitle.js.
+
+      ← EDIT the city/area to match src/content/pg.js before going live.
+    -->
+    <title>Goyal PG — girls' PG with home food and shared rooms</title>
+    <meta name="description" content="A girls' PG with 3-sharing and 6-sharing rooms, home-cooked meals, Wi-Fi, hot water and a watched gate. Rent is per seat, per month, with no brokerage." />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Goyal PG" />
+    <meta property="og:title" content="Goyal PG — girls' PG with home food and shared rooms" />
+    <meta property="og:description" content="Shared rooms, home-cooked meals, hot water and a watched gate. Rent per seat, no brokerage." />
+    <!-- ← EDIT to an absolute https:// URL once the domain is known; some
+         scrapers will not resolve a relative path. -->
+    <meta property="og:image" content="/icon-512x512.png" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>
