@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { Phone, MessageCircle, Inbox } from 'lucide-react'
+import { Phone, MessageCircle } from 'lucide-react'
 import { api } from '../lib/api'
+import { useApiQuery, setApiData } from '../lib/queries'
 import { relativeLabel } from '../lib/format'
-import { PanelSkeleton } from '../components/Skeleton'
+import { TitleSkeleton, PanelSkeleton } from '../components/Skeleton'
+import { Card, Button, StatusTag, PageTitle, buttonCls } from '../components/ui'
 import { formatPhone } from '../content/pg'
 
 /**
@@ -12,6 +14,9 @@ import { formatPhone } from '../content/pg'
  * Without this page the form is a write-only hole — messages land in a table
  * nobody opens, which is worse than having no form at all, because the sender
  * believes they have been heard.
+ *
+ * Read through the same query the menu's "2 new" count uses, so marking one
+ * contacted here updates that count straight away.
  */
 
 const FILTERS = [
@@ -21,10 +26,10 @@ const FILTERS = [
   { key: 'all', label: 'All' },
 ]
 
-const STATUS_STYLES = {
-  new: 'bg-accent/10 text-accent',
-  contacted: 'bg-warning/10 text-warning',
-  closed: 'bg-success/10 text-success',
+const TAGS = {
+  new: <StatusTag tone="new">New</StatusTag>,
+  contacted: <StatusTag tone="dark">Contacted</StatusTag>,
+  closed: <StatusTag tone="success">Closed</StatusTag>,
 }
 
 const EnquiryCard = ({ enquiry, onStatus }) => {
@@ -43,137 +48,98 @@ const EnquiryCard = ({ enquiry, onStatus }) => {
   }
 
   return (
-    <div className="bg-surface border border-border rounded-xl p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <Card className="px-4 py-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-heading font-bold text-text-primary">{enquiry.name}</p>
-          <p className="text-sm text-text-secondary mt-0.5">{relativeLabel(enquiry.created_at)}</p>
+          <p className="font-semibold text-[17px]">{enquiry.name}</p>
+          <p className="text-[15px] text-text-secondary">{relativeLabel(enquiry.created_at)}</p>
         </div>
-        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLES[enquiry.status]}`}>
-          {enquiry.status}
-        </span>
+        {TAGS[enquiry.status]}
       </div>
 
-      {enquiry.message && (
-        <p className="mt-3 text-text-primary whitespace-pre-wrap break-words">{enquiry.message}</p>
-      )}
+      {enquiry.message && <p className="whitespace-pre-wrap break-words">{enquiry.message}</p>}
+      {enquiry.email && <p className="text-[15px] text-text-secondary break-all">{enquiry.email}</p>}
 
-      {enquiry.email && (
-        <p className="mt-2 text-sm text-text-secondary break-all">{enquiry.email}</p>
-      )}
-
-      <div className="mt-4 pt-4 border-t border-border flex flex-wrap gap-2">
-        <a
-          href={`tel:+91${enquiry.phone}`}
-          className="flex items-center gap-2 h-[44px] px-4 bg-accent text-surface rounded-md font-semibold hover:opacity-90"
-        >
-          <Phone size={16} /> {formatPhone(enquiry.phone)}
+      <div className="grid grid-cols-2 gap-2">
+        <a href={`tel:+91${enquiry.phone}`} className={buttonCls('secondary')}>
+          <Phone size={18} aria-hidden="true" /> Call
         </a>
-        <a
-          href={`https://wa.me/91${enquiry.phone}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 h-[44px] px-4 border border-border rounded-md font-medium text-text-primary hover:bg-bg"
-        >
-          <MessageCircle size={16} /> WhatsApp
+        <a href={`https://wa.me/91${enquiry.phone}`} target="_blank" rel="noopener noreferrer" className={buttonCls('quiet')}>
+          <MessageCircle size={18} aria-hidden="true" /> WhatsApp
         </a>
+      </div>
+      <p className="text-[15px] text-text-secondary -mt-1">{formatPhone(enquiry.phone)}</p>
 
-        <div className="flex-1" />
-
+      <div className="border-t border-border pt-3 flex flex-wrap gap-2">
         {enquiry.status === 'new' && (
-          <button
-            onClick={() => setStatus('contacted')}
-            disabled={busy}
-            className="h-[44px] px-4 border border-border rounded-md font-medium text-text-secondary hover:text-text-primary disabled:opacity-40"
-          >
-            Mark contacted
-          </button>
+          <Button variant="quiet" className="flex-1" onClick={() => setStatus('contacted')} disabled={busy}>Mark contacted</Button>
         )}
         {enquiry.status !== 'closed' && (
-          <button
-            onClick={() => setStatus('closed')}
-            disabled={busy}
-            className="h-[44px] px-4 border border-border rounded-md font-medium text-text-secondary hover:text-text-primary disabled:opacity-40"
-          >
-            Close
-          </button>
+          <Button variant="quiet" className="flex-1" onClick={() => setStatus('closed')} disabled={busy}>Close</Button>
         )}
         {enquiry.status === 'closed' && (
-          <button
-            onClick={() => setStatus('new')}
-            disabled={busy}
-            className="h-[44px] px-4 border border-border rounded-md font-medium text-text-secondary hover:text-text-primary disabled:opacity-40"
-          >
-            Reopen
-          </button>
+          <Button variant="quiet" className="flex-1" onClick={() => setStatus('new')} disabled={busy}>Open again</Button>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 
 const Enquiries = () => {
-  const [enquiries, setEnquiries] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { data: enquiries = [], isPending, isError, error } = useApiQuery('/enquiries')
   const [filter, setFilter] = useState('new')
 
-  useEffect(() => {
-    api.get('/enquiries')
-      .then(setEnquiries)
-      .catch((err) => toast.error(err.message))
-      .finally(() => setLoading(false))
-  }, [])
-
   const onStatus = (id, status) =>
-    setEnquiries((list) => list.map((e) => (e.id === id ? { ...e, status } : e)))
+    setApiData('/enquiries', (list) => list?.map((e) => (e.id === id ? { ...e, status } : e)))
 
+  if (isPending) return <div className="flex flex-col gap-3.5"><TitleSkeleton /><PanelSkeleton count={4} /></div>
+
+  const count = (key) => (key === 'all' ? enquiries.length : enquiries.filter((e) => e.status === key).length)
   const shown = filter === 'all' ? enquiries : enquiries.filter((e) => e.status === filter)
-  const newCount = enquiries.filter((e) => e.status === 'new').length
+  const newCount = count('new')
 
   return (
-    <div>
-      <header className="mb-6">
-        <h1 className="text-3xl font-heading font-bold text-text-primary">Enquiries</h1>
-        <p className="text-text-secondary mt-1">
-          {newCount > 0
-            ? `${newCount} message${newCount === 1 ? '' : 's'} nobody has replied to yet.`
-            : 'Messages from the website.'}
-        </p>
-      </header>
+    <div className="flex flex-col gap-3.5 max-w-2xl">
+      <PageTitle>Enquiries</PageTitle>
+      <p className="text-text-secondary px-1 -mt-1.5">
+        {newCount > 0
+          ? `${newCount} ${newCount === 1 ? 'message' : 'messages'} nobody has replied to yet.`
+          : 'Messages from the website.'}
+      </p>
 
-      <div className="flex flex-wrap gap-2 mb-6">
-        {FILTERS.map(({ key, label }) => {
-          const count = key === 'all' ? enquiries.length : enquiries.filter((e) => e.status === key).length
-          return (
-            <button
-              key={key}
-              onClick={() => setFilter(key)}
-              className={`h-[44px] px-4 rounded-md font-medium border transition-colors
-                ${filter === key
-                  ? 'bg-accent text-surface border-accent'
-                  : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}
-            >
-              {label} ({count})
-            </button>
-          )
-        })}
+      {isError && <p className="px-1">Couldn't load enquiries: {error.message}</p>}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" role="radiogroup" aria-label="Show">
+        {FILTERS.map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            role="radio"
+            aria-checked={filter === key}
+            onClick={() => setFilter(key)}
+            className={`h-12 rounded-lg font-heading text-[15px] ${filter === key
+              ? 'bg-text-primary text-surface border-2 border-text-primary font-bold'
+              : 'bg-surface text-text-secondary border border-border font-semibold'}`}
+          >
+            {label} ({count(key)})
+          </button>
+        ))}
       </div>
 
-      {loading ? (
-        <PanelSkeleton count={4} />
-      ) : shown.length === 0 ? (
-        <div className="bg-surface border border-border rounded-xl p-10 text-center">
-          <Inbox size={32} className="mx-auto text-text-secondary mb-3" />
-          <p className="text-text-secondary">
-            {filter === 'new' ? 'Nothing waiting for a reply.' : 'Nothing here.'}
-          </p>
-        </div>
+      {shown.length === 0 ? (
+        <Card className="p-4">
+          <div className="border border-dashed border-border rounded-[10px] px-4 py-7 flex flex-col items-center gap-3 text-center">
+            <p className="font-heading font-bold text-lg">
+              {filter === 'all' ? 'No enquiries yet' : `No ${FILTERS.find(f => f.key === filter).label.toLowerCase()} enquiries`}
+            </p>
+            <p className="text-text-secondary">Messages from the website will show up here.</p>
+            {filter === 'new' && count('closed') > 0 && (
+              <Button variant="quiet" onClick={() => setFilter('closed')}>See closed enquiries</Button>
+            )}
+          </div>
+        </Card>
       ) : (
-        <div className="space-y-4">
-          {shown.map((enquiry) => (
-            <EnquiryCard key={enquiry.id} enquiry={enquiry} onStatus={onStatus} />
-          ))}
-        </div>
+        shown.map((enquiry) => <EnquiryCard key={enquiry.id} enquiry={enquiry} onStatus={onStatus} />)
       )}
     </div>
   )
