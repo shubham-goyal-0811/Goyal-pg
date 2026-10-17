@@ -346,7 +346,14 @@ const OnboardingWizard = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1">Address</label>
-              <input className={inputCls} value={state.ocrFields.address} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, address: e.target.value } })} />
+              {/* Aadhaar addresses run to three or four lines — a single-line
+                  input hid most of it, so nobody could check it. */}
+              <textarea
+                rows={4}
+                className={`${inputCls} resize-y`}
+                value={state.ocrFields.address}
+                onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, address: e.target.value } })}
+              />
             </div>
             <div className="grid sm:grid-cols-[10rem_1fr] gap-4">
               <div>
