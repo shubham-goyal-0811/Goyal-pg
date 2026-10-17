@@ -4,7 +4,7 @@ const supabase = require('../config/supabase');
 const roleCheck = require('../middleware/roleCheck');
 const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
-const { rejectionIfBackwards } = require('../services/meterReadings');
+const { rejectionIfBackwards, tenantsPresentOn } = require('../services/meterReadings');
 
 // NOTE: this router is mounted under routes/rooms.js, which already applies
 // authMiddleware. Mounting it anywhere else requires applying auth there too.
@@ -48,16 +48,8 @@ router.post('/', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
       if (rejection) return res.status(400).json({ error: rejection, code: 'READING_WENT_BACKWARDS' });
     }
 
-    // 1. Snapshot active tenants in this room
-    const { data: tenants, error: tenantsError } = await supabase
-      .from('tenants')
-      .select('id')
-      .eq('room_id', roomId)
-      .eq('status', 'active');
-
-    if (tenantsError) throw tenantsError;
-
-    const activeTenantIds = tenants.map(t => t.id);
+    // 1. Snapshot who lived in this room on the reading's date
+    const activeTenantIds = await tenantsPresentOn(roomId, reading_date);
 
     // 2. Insert reading
     const { data: reading, error } = await supabase

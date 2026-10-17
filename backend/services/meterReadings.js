@@ -19,6 +19,42 @@ const findPriorReading = async (roomId, readingDate) => {
   return data?.[0] ?? null;
 };
 
+/** The earliest reading after `readingDate` for a room, or null. */
+const findNextReading = async (roomId, readingDate) => {
+  const { data, error } = await supabase
+    .from('meter_readings')
+    .select('reading_value, reading_date')
+    .eq('room_id', roomId)
+    .gt('reading_date', readingDate)
+    .order('reading_date', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(1);
+
+  if (error) throw error;
+  return data?.[0] ?? null;
+};
+
+/**
+ * Ids of the tenants living in a room on `date`: moved in by then and not yet
+ * moved out. Worked out from the dates rather than today's status, because a
+ * reading is often entered late — the end-of-September reading typed in on
+ * 17 October must be charged to who was there in September, not to whoever
+ * has moved in since. For a reading dated today it gives the same answer as
+ * "active right now".
+ */
+const tenantsPresentOn = async (roomId, date) => {
+  const { data, error } = await supabase
+    .from('tenants')
+    .select('id, status, check_out_date')
+    .eq('room_id', roomId)
+    .lte('check_in_date', date);
+
+  if (error) throw error;
+  return data
+    .filter(t => (t.check_out_date ? t.check_out_date > date : t.status === 'active'))
+    .map(t => t.id);
+};
+
 /**
  * Guard against a reading lower than the one before it.
  *
@@ -39,4 +75,4 @@ const rejectionIfBackwards = async (roomId, readingDate, readingValue) => {
        + 'Check the value — if the meter really was reset or replaced, resubmit with allow_lower set to true.';
 };
 
-module.exports = { findPriorReading, rejectionIfBackwards };
+module.exports = { findPriorReading, findNextReading, tenantsPresentOn, rejectionIfBackwards };
