@@ -40,7 +40,7 @@ const Tenants = () => {
     return (
       <div>
         <HeaderSkeleton />
-        <div className="h-[50px] bg-border/60 rounded-xl animate-pulse mb-6" aria-hidden="true" />
+        <div className="h-[50px] bg-skeleton rounded-xl animate-skeleton mb-6" aria-hidden="true" />
         <CardGridSkeleton count={6} lines={2} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" />
       </div>
     )

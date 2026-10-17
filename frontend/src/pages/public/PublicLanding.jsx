@@ -257,7 +257,7 @@ const RoomsPricing = ({ tiers, slow, failed }) => (
       // First ~3 seconds: the shape of the cards, so the page doesn't jump.
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" aria-hidden="true">
         {[0, 1].map((i) => (
-          <div key={i} className="h-44 bg-border/60 rounded-xl animate-pulse" />
+          <div key={i} className="h-44 bg-skeleton rounded-xl animate-skeleton" />
         ))}
       </div>
     )}
