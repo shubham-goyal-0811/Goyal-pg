@@ -1,29 +1,77 @@
 // Node 24+ has native fetch built-in — no import needed
 const env = require('../config/env');
 
-const VISION_API_URL = 'https://vision.googleapis.com/v1/images:annotate';
+const VISION_IMAGES_URL = 'https://vision.googleapis.com/v1/images:annotate';
+// images:annotate only takes images — a PDF sent there fails with "Bad image
+// data". PDFs go through files:annotate, which reads up to 5 pages inline.
+const VISION_FILES_URL = 'https://vision.googleapis.com/v1/files:annotate';
+const PDF_PAGES = [1, 2]; // Aadhaar is one page, sometimes front and back on two
+
+const EMPTY_FIELDS = { name: '', address: '', id_number: '', dob: '' };
+
+// `error` is written for the admin at the desk, not for a developer — the
+// wizard shows it as-is and lets them type the fields by hand.
+const failed = (error) => ({ rawText: '', ocrFields: { ...EMPTY_FIELDS }, error });
+
+/**
+ * e-Aadhaar PDFs downloaded from UIDAI are password-protected. Vision cannot
+ * open them and reports the same unhelpful error as a corrupt file, so check
+ * for the encryption dictionary ourselves and say what is actually wrong.
+ */
+const isEncryptedPdf = (buffer) => buffer.includes('/Encrypt');
+
+const buildRequest = (base64, mimetype) => {
+  if (mimetype === 'application/pdf') {
+    return {
+      url: VISION_FILES_URL,
+      body: {
+        requests: [{
+          inputConfig: { content: base64, mimeType: 'application/pdf' },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          pages: PDF_PAGES,
+        }],
+      },
+    };
+  }
+  return {
+    url: VISION_IMAGES_URL,
+    body: {
+      requests: [{
+        image: { content: base64 },
+        features: [{ type: 'TEXT_DETECTION', maxResults: 1 }],
+      }],
+    },
+  };
+};
+
+// files:annotate nests one response per page inside the file's response.
+const readText = (json, mimetype) => {
+  const top = json.responses?.[0];
+  if (mimetype === 'application/pdf') {
+    const pages = top?.responses || [];
+    const pageError = pages.find(p => p.error)?.error;
+    const text = pages.map(p => p.fullTextAnnotation?.text || '').filter(Boolean).join('\n');
+    return { error: top?.error || (text ? null : pageError), text };
+  }
+  return { error: top?.error, text: top?.textAnnotations?.[0]?.description || '' };
+};
 
 const parseAadhaarOCR = async (fileBuffer, mimetype) => {
   const apiKey = env.GOOGLE_CLOUD_VISION_API_KEY;
 
   if (!apiKey || apiKey === 'dummy-vision-api-key') {
     console.warn('[OCR] No Vision API key set. Returning empty fields.');
-    return { rawText: '', ocrFields: { name: '', address: '', id_number: '', dob: '' } };
+    return { rawText: '', ocrFields: { ...EMPTY_FIELDS } };
+  }
+
+  if (mimetype === 'application/pdf' && isEncryptedPdf(fileBuffer)) {
+    return failed('This PDF is password-protected (e-Aadhaar downloads are). Upload a photo or screenshot of the card instead.');
   }
 
   try {
-    const base64Image = fileBuffer.toString('base64');
+    const { url, body } = buildRequest(fileBuffer.toString('base64'), mimetype);
 
-    const body = {
-      requests: [
-        {
-          image: { content: base64Image },
-          features: [{ type: 'TEXT_DETECTION', maxResults: 1 }],
-        },
-      ],
-    };
-
-    const response = await fetch(`${VISION_API_URL}?key=${apiKey}`, {
+    const response = await fetch(`${url}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -32,17 +80,15 @@ const parseAadhaarOCR = async (fileBuffer, mimetype) => {
     if (!response.ok) {
       const errText = await response.text();
       console.error('[OCR] Vision API HTTP error:', response.status, errText);
-      return { rawText: '', ocrFields: { name: '', address: '', id_number: '', dob: '' } };
+      return failed('Text extraction service is unavailable right now.');
     }
 
-    const json = await response.json();
+    const { error, text: rawText } = readText(await response.json(), mimetype);
 
-    if (json.responses?.[0]?.error) {
-      console.error('[OCR] Vision API error:', json.responses[0].error);
-      return { rawText: '', ocrFields: { name: '', address: '', id_number: '', dob: '' } };
+    if (error) {
+      console.error('[OCR] Vision API error:', error);
+      return failed('Could not read this file. Try a clearer photo or a different file.');
     }
-
-    const rawText = json.responses?.[0]?.textAnnotations?.[0]?.description || '';
 
     const ocrFields = extractAadhaarFields(rawText);
     // Debug-only — never log PII in production
@@ -54,7 +100,7 @@ const parseAadhaarOCR = async (fileBuffer, mimetype) => {
     return { rawText, ocrFields };
   } catch (err) {
     console.error('[OCR] Unexpected error:', err.message);
-    return { rawText: '', ocrFields: { name: '', address: '', id_number: '', dob: '' } };
+    return failed('Text extraction failed unexpectedly.');
   }
 };
 
@@ -62,12 +108,14 @@ const parseAadhaarOCR = async (fileBuffer, mimetype) => {
  * Parse Aadhaar-specific fields from OCR raw text.
  */
 const extractAadhaarFields = (rawText) => {
-  if (!rawText) return { name: '', address: '', id_number: '', dob: '' };
+  if (!rawText) return { ...EMPTY_FIELDS };
 
   const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // Aadhaar number: 4+4+4 digits (with spaces or without)
-  const aadhaarMatch = rawText.match(/\d{4}\s?\d{4}\s?\d{4}/);
+  // Aadhaar number: 4+4+4 digits (with spaces or without). Spaces only, not \s —
+  // PDF text puts the birth year and the number on adjacent lines, and \s would
+  // join them. The lookarounds skip the 16-digit VID printed on the same card.
+  const aadhaarMatch = rawText.match(/(?<!\d ?)\d{4} ?\d{4} ?\d{4}(?! ?\d)/);
   const id_number = aadhaarMatch ? aadhaarMatch[0].trim() : '';
 
   // DOB: DD/MM/YYYY or DD-MM-YYYY or Year of Birth: YYYY

@@ -21,9 +21,11 @@ router.post('/ocr', roleCheck(ADMIN_OR_GATEKEEPER), uploadLimiter, upload.single
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const { rawText, ocrFields } = await parseAadhaarOCR(req.file.buffer, req.file.mimetype);
+    // A failed read is still a 200: the wizard carries on with empty fields
+    // for the admin to fill by hand, and shows `error` so they know why.
+    const { rawText, ocrFields, error } = await parseAadhaarOCR(req.file.buffer, req.file.mimetype);
 
-    res.json({ rawText, ocrFields });
+    res.json({ rawText, ocrFields, error: error || null });
   } catch (err) {
     console.error('[/documents/ocr]', err.message);
     res.status(500).json({ error: err.message });
