@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Plus, ExternalLink } from 'lucide-react'
 import { monthLabel } from '../lib/format'
+import { prefetchApi } from '../lib/queries'
 
 const RoomCard = ({ room }) => {
   const navigate = useNavigate()
@@ -44,6 +45,9 @@ const RoomCard = ({ room }) => {
               <>
                 <button
                   onClick={(e) => { e.stopPropagation(); navigate(`/admin/tenants/${tenant.id}`) }}
+                  // Same as the Tenants list: load the record as the pointer arrives.
+                  onPointerEnter={() => prefetchApi(`/tenants/${tenant.id}`)}
+                  onFocus={() => prefetchApi(`/tenants/${tenant.id}`)}
                   className="font-medium truncate pr-2 text-left hover:text-accent transition-colors flex items-center gap-1 group"
                 >
                   {tenant.full_name}

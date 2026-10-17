@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { useApiQuery, setApiData } from '../lib/queries'
 import { dateLabel, monthLabel, rupees } from '../lib/format'
 import toast from 'react-hot-toast'
 import MeterModal from '../components/MeterModal'
@@ -368,24 +369,27 @@ const TenantDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const { role } = useAuth()
-  const [tenant, setTenant] = useState(null)
-  const [loading, setLoading] = useState(true)
   const [isMeterModalOpen, setMeterModalOpen] = useState(false)
   const [roomIdForMeter, setRoomIdForMeter] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
 
-  useEffect(() => {
-    api.get(`/tenants/${id}`)
-      .then(res => setTenant(res))
-      .catch(() => toast.error('Failed to load tenant'))
-      .finally(() => setLoading(false))
-  }, [id])
+  // Usually already cached: the Tenants list and room cards prefetch this on
+  // touch, so the record is in hand before the page has finished opening.
+  const endpoint = `/tenants/${id}`
+  const { data: tenant, isPending, isError, error } = useApiQuery(endpoint)
+
+  // Every edit below lands in the cache on the response, so the screen updates
+  // straight away. api.js then refetches this record behind it (any write to
+  // /tenants or /rent busts '/tenants'), which corrects anything the patch got
+  // wrong — e.g. totals the server recalculated.
+  const patchTenant = (patch) =>
+    setApiData(endpoint, prev => prev && { ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) })
 
   const handleCheckout = async () => {
     if (!window.confirm('Are you sure you want to mark this tenant as vacated?')) return
     try {
       const res = await api.post(`/tenants/${id}/checkout`)
-      setTenant(prev => ({ ...prev, status: 'vacated' }))
+      patchTenant({ status: 'vacated' })
       if (res.requiresMeterReading) {
         setRoomIdForMeter(res.roomId)
         setMeterModalOpen(true)
@@ -401,8 +405,7 @@ const TenantDetail = () => {
       await api.post(`/rent/${paymentId}/mark-paid`, {
         amount_paid: tenant.rent_payments.find(p => p.id === paymentId)?.total_amount
       })
-      setTenant(prev => ({
-        ...prev,
+      patchTenant(prev => ({
         rent_payments: prev.rent_payments.map(p => p.id === paymentId ? { ...p, status: 'paid' } : p)
       }))
       toast.success('Marked as paid')
@@ -411,7 +414,7 @@ const TenantDetail = () => {
     }
   }
 
-  if (loading) {
+  if (isPending) {
     return (
       <div>
         <HeaderSkeleton />
@@ -422,7 +425,15 @@ const TenantDetail = () => {
       </div>
     )
   }
-  if (!tenant) return <div className="flex justify-center p-8 text-text-secondary">Tenant not found</div>
+  // Checked on `tenant`, not isError: a failed background refresh sets isError
+  // too, but keeps the cached record, and that should stay on screen.
+  if (!tenant) {
+    return (
+      <div className="flex justify-center p-8 text-text-secondary">
+        {isError && error.status !== 404 ? `Couldn't load tenant: ${error.message}` : 'Tenant not found'}
+      </div>
+    )
+  }
 
   // Rent, ID-proof numbers and document scans are admin-only. The API already
   // omits these fields for gatekeepers — this just avoids rendering empty
@@ -503,7 +514,7 @@ const TenantDetail = () => {
           <IdProof
             tenant={tenant}
             tenantId={id}
-            onChange={(patch) => setTenant(prev => ({ ...prev, ...patch }))}
+            onChange={patchTenant}
           />
         )}
 
@@ -512,7 +523,7 @@ const TenantDetail = () => {
           <PortalAccess
             tenant={tenant}
             tenantId={id}
-            onChange={(patch) => setTenant(prev => ({ ...prev, ...patch }))}
+            onChange={patchTenant}
           />
         )}
 
