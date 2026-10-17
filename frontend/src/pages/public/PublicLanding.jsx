@@ -45,8 +45,8 @@ const useBusinessSchema = () => {
       priceRange: `₹${cheapest}–₹${dearest} per seat per month`,
       address: {
         '@type': 'PostalAddress',
-        streetAddress: pg.address.line1,
-        addressLocality: pg.address.locality || pg.address.city,
+        streetAddress: [pg.address.line1, pg.address.locality].filter(Boolean).join(', '),
+        addressLocality: pg.address.city,
         addressRegion: pg.address.state,
         postalCode: pg.address.pincode,
         addressCountry: 'IN',

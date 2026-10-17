@@ -25,15 +25,16 @@
 
 export const pg = {
   name: 'Goyal PG',
-  tagline: 'A girls\' PG in a quiet residential lane — home food, hot water, and a gate that is actually watched.',
+  tagline: 'A girls\' PG in a quiet residential lane in Bathinda — your own kitchen to cook in, hot water, and a gate that is actually watched.',
 
-  // ← EDIT — used in the footer, the map link and the JSON-LD business listing
+  // Used in the hero, the footer, the map link and the JSON-LD business listing.
+  // The hero shows `locality, city`, so keep locality to the road/area name.
   address: {
-    line1: '<street address>',
-    locality: '<area>',
-    city: '<city>',
-    state: '<state>',
-    pincode: '<pincode>',
+    line1: '21170, Street Number 7',
+    locality: 'Ajit Rd, BTI',
+    city: 'Bathinda',
+    state: 'Punjab',
+    pincode: '151001',
   },
 
   // ← EDIT — bare 10 digits, no +91. Used for tel: and WhatsApp links.
@@ -46,6 +47,8 @@ export const pg = {
   intro: [
     'We have been running this PG for families who want somewhere safe and simple for their daughter to live while she studies or works.',
     'Rooms are shared, rent is per seat, and there are no hidden charges — you pay rent, an AC charge if you want AC, and your share of the electricity actually used in your room.',
+    // Said up front, because it is the first thing families ask on a visit.
+    'Meals are not provided. Residents cook for themselves in the shared kitchen on the first floor, and wash their own clothes — there is no washing machine.',
   ],
 
   /**
@@ -95,13 +98,11 @@ export const pg = {
    */
   amenities: [
     { label: 'Wi-Fi', detail: 'Shared broadband throughout the building' },
-    { label: 'Home-cooked meals', detail: 'Breakfast and dinner, vegetarian' },
+    { label: 'Shared kitchen', detail: 'On the first floor — residents cook their own meals' },
     { label: 'Hot water', detail: 'Geyser in every bathroom' },
     { label: 'Power backup', detail: 'Inverter for fans and lights' },
     { label: 'Watched gate', detail: 'Entry and exit logged, visitors recorded' },
     { label: 'Parking', detail: 'Two-wheeler space, subject to availability' },
-    { label: 'Laundry area', detail: 'Washing machine and drying terrace' },
-    { label: 'Study desk', detail: 'One per seat' },
   ],
 
   // House rules, stated plainly. Parents read this section first.
@@ -109,7 +110,6 @@ export const pg = {
     'Gate closes at 10:00 pm. Later than that, tell us in advance.',
     'Visitors are signed in at the gate and are not allowed in the rooms.',
     'Police verification is completed for every resident — we handle the paperwork.',
-    'One month\'s notice before moving out.',
   ],
 
   /**
@@ -119,8 +119,8 @@ export const pg = {
    * Compress before adding: ~1600px wide, JPEG ~75%. These load on phones.
    */
   photos: [
-    // { src: '/photos/room-3-sharing.jpg', alt: 'A three-sharing room with three beds and desks' },
-    // { src: '/photos/dining.jpg',         alt: 'The dining area at breakfast' },
+    // { src: '/photos/room-3-sharing.jpg', alt: 'A three-sharing room with three beds' },
+    // { src: '/photos/kitchen.jpg',        alt: 'The shared kitchen on the first floor' },
     // { src: '/photos/terrace.jpg',        alt: 'The terrace room' },
   ],
 }

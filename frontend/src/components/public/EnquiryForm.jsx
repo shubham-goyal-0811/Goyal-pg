@@ -120,7 +120,7 @@ const EnquiryForm = () => {
           <textarea
             id="enq-message" rows={3} maxLength={1000}
             value={form.message} onChange={set('message')}
-            placeholder="When you'd like to move in, which room, meals…"
+            placeholder="When you'd like to move in, which room, any questions…"
             className="w-full px-3 py-2.5 bg-bg border border-border rounded-md text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent resize-y"
           />
         </div>
