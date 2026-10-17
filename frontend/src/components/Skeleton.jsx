@@ -92,4 +92,56 @@ export const RouteSkeleton = () => (
   </div>
 )
 
+/**
+ * Shown by AuthProvider while the session is restored and GET /me answers —
+ * before any route, layout or page can render.
+ *
+ * In a browser tab that wait is usually skipped: the identity cache lives in
+ * sessionStorage and survives a reload. An installed PWA starts a fresh
+ * session on every launch, so it waits every time, on a backend that may be
+ * cold — and this used to be a blank white screen for all of it.
+ *
+ * Draws the shell of whichever app the URL is in, sized like Layout and
+ * TenantLayout, so the real one lands in place.
+ */
+export const AppSkeleton = ({ path }) => {
+  if (path.startsWith('/admin')) {
+    return (
+      <div className="flex h-screen bg-bg">
+        <div className="hidden md:flex w-64 bg-surface border-r border-border flex-col p-6 gap-8">
+          <Skeleton className="h-8 w-32" />
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden p-4 md:p-8 pt-16 md:pt-8 w-full">
+          <div className="max-w-6xl mx-auto"><RouteSkeleton /></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (path.startsWith('/me')) {
+    return (
+      <div className="min-h-screen bg-bg flex flex-col">
+        <div className="bg-surface border-b border-border">
+          <div className="max-w-2xl mx-auto px-4 h-16 flex items-center">
+            <Skeleton className="h-5 w-28" />
+          </div>
+        </div>
+        <div className="flex-1 w-full max-w-2xl mx-auto px-4 py-6">
+          <PanelSkeleton count={3} />
+        </div>
+      </div>
+    )
+  }
+
+  // /login (the PWA's start_url) and the public site: no shell to guess at.
+  return (
+    <div className="min-h-screen bg-bg p-4 md:p-8">
+      <div className="max-w-2xl mx-auto"><RouteSkeleton /></div>
+    </div>
+  )
+}
+
 export default Skeleton

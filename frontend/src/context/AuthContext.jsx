@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import { supabase } from '../lib/supabase'
 import { api, invalidateTokenCache } from '../lib/api'
 import { ROLES } from '../lib/roles'
+import { AppSkeleton } from '../components/Skeleton'
 
 const AuthContext = createContext({})
 
@@ -144,7 +145,7 @@ export const AuthProvider = ({ children }) => {
         signOut,
       }}
     >
-      {!loading && children}
+      {loading ? <AppSkeleton path={window.location.pathname} /> : children}
     </AuthContext.Provider>
   )
 }
