@@ -239,7 +239,7 @@ const IdProof = ({ tenant, tenantId, onChange }) => {
             onKeyDown={e => { if (e.key === 'Enter' && cleaned && changed) save() }}
             inputMode={type === 'aadhaar' ? 'numeric' : 'text'}
             autoComplete="off"
-            className={inputCls(wrongLength, 'tracking-wide tabular-nums text-lg')}
+            className={inputCls(wrongLength, 'tracking-wide tabular-nums')}
           />
         </Field>
       </div>
