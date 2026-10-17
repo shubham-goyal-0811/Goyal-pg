@@ -333,12 +333,12 @@ const Visit = () => (
           <div>
             <p className="text-text-primary">{fullAddress()}</p>
             <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress())}`}
+              href={pg.mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-accent font-medium hover:underline text-sm"
             >
-              Open in Maps
+              Get directions
             </a>
           </div>
         </div>
