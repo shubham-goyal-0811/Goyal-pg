@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { isAdmin } from '../lib/roles'
 import { api } from '../lib/api'
@@ -7,7 +7,7 @@ import { useApiQuery, setApiData } from '../lib/queries'
 import { dateLabel, dayMonthLabel, monthName, rupees, seatRentLabel, todayISO } from '../lib/format'
 import toast from 'react-hot-toast'
 import { X, ExternalLink, Loader2, LogOut, ChevronDown } from 'lucide-react'
-import { TitleSkeleton, PanelSkeleton } from '../components/Skeleton'
+import Skeleton, { TitleSkeleton, PanelSkeleton } from '../components/Skeleton'
 import {
   Card, CardTitle, Button, TextButton, StatusTag, RentTag, Notice, InfoRow,
   Field, ConfirmDialog, inputCls,
@@ -422,10 +422,61 @@ const MoreDetails = ({ tenant, tenantId, onChange, onOpenDoc }) => {
   )
 }
 
+// ── Checkout ──────────────────────────────────────────────────────────────────
+// The meter is read as part of moving out. That reading closes the stretch of
+// electricity the leaving tenant shares, so it is saved while they still count
+// as living here — taken afterwards, their share went to the roommates.
+const CheckoutDialog = ({ tenant, room, busy, onConfirm, onCancel }) => {
+  const [reading, setReading] = useState('')
+  const { data: readings, isPending } = useApiQuery(`/rooms/${tenant.room_id}/meter-readings`)
+  const previous = readings?.[0] ?? null
+  const first = firstName(tenant.full_name)
+
+  const value = Number(reading)
+  const goesBackwards = Boolean(previous && reading !== '' && value < previous.reading_value)
+
+  const confirm = () => {
+    if (reading === '') return toast.error('Enter the number on the meter')
+    onConfirm(value, goesBackwards)
+  }
+
+  return (
+    <ConfirmDialog
+      title={`Check out ${tenant.full_name}?`}
+      confirmLabel={goesBackwards ? 'Save and check out' : 'Yes, check out'}
+      busy={busy}
+      onConfirm={confirm}
+      onCancel={onCancel}
+    >
+      <div className="flex flex-col gap-3.5">
+        <p>{first} will be marked as moved out of Room {room}.</p>
+        {isPending ? (
+          <Skeleton className="h-5 w-56" />
+        ) : previous ? (
+          <p>Last reading was <b className="font-semibold">{previous.reading_value}</b> on {dateLabel(previous.reading_date)}.</p>
+        ) : (
+          <p className="text-text-secondary">No reading yet for this room.</p>
+        )}
+        <Field
+          label="Number on the meter now"
+          error={goesBackwards ? 'Lower than the last reading. Only go ahead if the meter was reset or replaced.' : null}
+        >
+          <input
+            inputMode="numeric"
+            value={reading}
+            onChange={(e) => setReading(e.target.value.replace(/\D/g, ''))}
+            className={inputCls(goesBackwards, 'tabular-nums')}
+            autoFocus
+          />
+        </Field>
+      </div>
+    </ConfirmDialog>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const TenantDetail = () => {
   const { id } = useParams()
-  const navigate = useNavigate()
   const { role } = useAuth()
   const [previewDoc, setPreviewDoc] = useState(null)
   const [payingId, setPayingId] = useState(null)
@@ -444,16 +495,16 @@ const TenantDetail = () => {
   const patchTenant = (patch) =>
     setApiData(endpoint, prev => prev && { ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) })
 
-  const checkout = async () => {
+  const checkout = async (meterReading, allowLower) => {
     setCheckingOut(true)
     try {
-      const res = await api.post(`/tenants/${id}/checkout`)
+      await api.post(`/tenants/${id}/checkout`, {
+        meter_reading: meterReading,
+        ...(allowLower ? { allow_lower: true } : {})
+      })
       patchTenant({ status: 'vacated', check_out_date: todayISO() })
       setConfirmCheckout(false)
       toast.success(`${tenant.full_name} checked out`)
-      // The remaining tenants' electricity is split from this reading, so
-      // ask for it now rather than leave a gap in the next bill.
-      if (res.requiresMeterReading) navigate(`/admin/meter-reading/${res.roomId}`)
     } catch (err) {
       toast.error(err.message || "Couldn't check out")
     } finally {
@@ -535,15 +586,13 @@ const TenantDetail = () => {
     <div className="flex flex-col gap-4 lg:gap-[18px]">
       {previewDoc && <DocPreviewModal doc={previewDoc} tenantId={id} onClose={() => setPreviewDoc(null)} />}
       {confirmCheckout && (
-        <ConfirmDialog
-          title={`Check out ${tenant.full_name}?`}
-          confirmLabel="Yes, check out"
+        <CheckoutDialog
+          tenant={tenant}
+          room={room}
           busy={checkingOut}
           onConfirm={checkout}
           onCancel={() => setConfirmCheckout(false)}
-        >
-          {first} will be marked as moved out of Room {room}. Next you'll enter a new meter reading for the room.
-        </ConfirmDialog>
+        />
       )}
 
       {/* Phones get this in the header bar instead. */}
