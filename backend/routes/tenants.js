@@ -6,7 +6,7 @@ const roleCheck = require('../middleware/roleCheck');
 const { ROLES, ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { generateRent, isBillingMonth, TENANT_BILLING_SELECT } = require('../services/rent');
 const { rejectionIfBackwards } = require('../services/meterReadings');
-const { validateId, sanitizeSearch, normalizeEmail } = require('../middleware/validate');
+const { validateId, sanitizeSearch, normalizeEmail, normalizeIdProof } = require('../middleware/validate');
 
 const { invalidateRole } = roleCheck;
 
@@ -32,6 +32,17 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
     const hasReading = meter_reading !== undefined && meter_reading !== null && meter_reading !== '';
     if (hasReading && (isNaN(Number(meter_reading)) || Number(meter_reading) < 0)) {
       return res.status(400).json({ error: 'meter_reading must be a non-negative number' });
+    }
+
+    // ID proof is optional at onboarding — OCR often reads nothing usable off a
+    // creased card, and blocking the whole check-in on that would push admins to
+    // type a placeholder, which is worse than an empty field. But whatever IS
+    // supplied has to be real, because this number goes on the police form.
+    let idProof = { type: null, number: null };
+    if (id_proof_number?.trim()) {
+      const checked = normalizeIdProof(id_proof_type, id_proof_number);
+      if (!checked.ok) return res.status(400).json({ error: checked.error });
+      idProof = { type: checked.type, number: checked.number };
     }
     // ────────────────────────────────────────────────────────────────────
 
@@ -73,7 +84,7 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
       .insert([{
         room_id: Number(room_id), full_name: full_name.trim(), phone_number: phone_number.trim(),
         parent_contact: parent_contact?.trim() || null, address,
-        id_proof_type, id_proof_number,
+        id_proof_type: idProof.type, id_proof_number: idProof.number,
         ac_opted: Boolean(ac_opted), has_vehicle: Boolean(has_vehicle),
         vehicle_number: vehicle_number || null, check_in_date
       }])
@@ -155,10 +166,11 @@ router.get('/:id', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res
 
 // PATCH /tenants/:id — only whitelisted fields can be updated.
 // login_email is NOT in this list; it has extra rules and is handled below.
+// id_proof_* are NOT here either — the pair has to be validated together, so it
+// is handled below rather than copied through blind.
 const TENANT_EDITABLE_FIELDS = [
   'full_name', 'phone_number', 'parent_contact', 'address',
-  'ac_opted', 'has_vehicle', 'vehicle_number',
-  'id_proof_type', 'id_proof_number', 'check_in_date'
+  'ac_opted', 'has_vehicle', 'vehicle_number', 'check_in_date'
 ];
 
 router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
@@ -166,6 +178,38 @@ router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
     const safeUpdates = {};
     for (const field of TENANT_EDITABLE_FIELDS) {
       if (req.body[field] !== undefined) safeUpdates[field] = req.body[field];
+    }
+
+    // ── ID proof ────────────────────────────────────────────────────────────
+    // Correcting an Aadhaar that OCR misread is the main reason this endpoint
+    // gets used by hand, so it has to accept a number on its own — but a number
+    // means nothing without its type, and a type means nothing without a number.
+    // Fill whichever half wasn't sent from the stored row and validate the pair.
+    const editsType = req.body.id_proof_type !== undefined;
+    const editsNumber = req.body.id_proof_number !== undefined;
+
+    if (editsType || editsNumber) {
+      const { data: current, error: curErr } = await supabase
+        .from('tenants')
+        .select('id_proof_type, id_proof_number')
+        .eq('id', req.params.id)
+        .single();
+      if (curErr) throw curErr;
+
+      const nextType = editsType ? req.body.id_proof_type : current.id_proof_type;
+      const nextNumber = editsNumber ? req.body.id_proof_number : current.id_proof_number;
+
+      // Explicitly clearing the number clears the type with it, so the record
+      // never claims "aadhaar" with nothing behind it.
+      if (editsNumber && !String(nextNumber ?? '').trim()) {
+        safeUpdates.id_proof_type = null;
+        safeUpdates.id_proof_number = null;
+      } else {
+        const checked = normalizeIdProof(nextType, nextNumber);
+        if (!checked.ok) return res.status(400).json({ error: checked.error });
+        safeUpdates.id_proof_type = checked.type;
+        safeUpdates.id_proof_number = checked.number;
+      }
     }
 
     // ── Portal access ───────────────────────────────────────────────────────
