@@ -10,12 +10,13 @@
  * in place: same card sizes, same column count, so nothing jumps when the real
  * data lands.
  *
- * Deliberately plain — flat grey blocks on a 150ms pulse, no shimmer sweep. The
- * point is to look like the page, not to be looked at.
+ * Deliberately plain — flat blocks on a slow, shallow pulse, no shimmer sweep.
+ * The point is to look like the page, not to be looked at. Colour and pulse
+ * live in index.css (--color-skeleton, --animate-skeleton).
  */
 
 const Skeleton = ({ className = '' }) => (
-  <div className={`bg-border/60 rounded animate-pulse ${className}`} aria-hidden="true" />
+  <div className={`bg-skeleton rounded animate-skeleton ${className}`} aria-hidden="true" />
 )
 
 /** A header block: title + one line of subtitle. Matches every page's <header>. */
