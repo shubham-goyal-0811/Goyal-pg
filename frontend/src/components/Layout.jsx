@@ -80,7 +80,9 @@ const Layout = ({ children }) => {
         flex flex-col
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        <div className="p-6">
+        {/* Right-aligned on mobile so the fixed menu toggle (top-left) doesn't
+            sit on top of the name. Desktop has no toggle, so it stays left. */}
+        <div className="p-6 text-right md:text-left">
           <Link to="/admin" className="text-2xl font-heading font-bold text-accent">Goyal PG</Link>
           <p className="text-xs text-text-secondary mt-0.5">Office</p>
         </div>
