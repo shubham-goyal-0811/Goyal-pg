@@ -113,6 +113,9 @@ export const AuthProvider = ({ children }) => {
       if (session?.user) {
         await resolve(session.user)
       } else {
+        // Session ended without signOut() — expired, or signed out in another
+        // tab. Same rule as signOut: nothing cached may outlive the account.
+        api.reset()
         setUser(null)
         setIdentity(EMPTY_IDENTITY)
         setLoading(false)
@@ -125,7 +128,7 @@ export const AuthProvider = ({ children }) => {
   const signOut = async () => {
     clearIdentityCache()    // wipe sessionStorage identity
     invalidateTokenCache()  // wipe in-memory JWT
-    api.invalidate('/')     // wipe cached GET responses — shared devices are the norm here
+    api.reset()             // wipe cached GET responses — shared devices are the norm here
     await supabase.auth.signOut()
   }
 
