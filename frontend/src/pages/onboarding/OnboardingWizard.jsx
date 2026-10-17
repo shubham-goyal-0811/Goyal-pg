@@ -245,25 +245,34 @@ const OnboardingWizard = () => {
               )}
             </Field>
 
+            {/* The room's last reading sits above the box, not as a hint under
+                it, so it stays in view while typing and when the value is
+                flagged. "No reading yet" while it is still loading would tell
+                the admin this reading becomes the baseline when it won't. */}
+            {state.roomId && (
+              loadingReading ? (
+                <Skeleton className="h-5 w-56" />
+              ) : lastReading ? (
+                <p>
+                  Last reading for Room {room?.room_number}: <b className="font-semibold tabular-nums">{lastReading.reading_value}</b> on {dateLabel(lastReading.reading_date)}.
+                </p>
+              ) : (
+                <p className="text-text-secondary">
+                  No reading yet for Room {room?.room_number}. This one becomes the starting point.
+                </p>
+              )
+            )}
             {state.roomId && (
               <Field
                 label="Meter reading today"
                 error={readingGoesBackwards ? `This is lower than the last reading (${lastReading.reading_value}). Check for a typo.` : null}
-                hint={
-                  loadingReading ? null
-                    : lastReading ? `Last reading was ${lastReading.reading_value} on ${dateLabel(lastReading.reading_date)}.`
-                    : 'No reading yet for this room. This one becomes the starting point.'
-                }
               >
                 <input
                   inputMode="numeric"
                   value={state.meterReading}
                   onChange={e => setState({ ...state, meterReading: e.target.value.replace(/[^\d.]/g, '') })}
-                  className={inputCls(readingGoesBackwards)}
+                  className={inputCls(readingGoesBackwards, 'tabular-nums')}
                 />
-                {/* "No reading yet" while it is still loading would tell the
-                    admin this reading becomes the baseline when it won't. */}
-                {loadingReading && <Skeleton className="h-4 w-48" />}
               </Field>
             )}
             {state.roomId && (
