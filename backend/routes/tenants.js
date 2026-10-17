@@ -419,7 +419,9 @@ router.post('/:id/generate-rent', roleCheck(ADMIN_ONLY), validateId(), async (re
         ? 'This month is already marked paid for this tenant.'
         : reason === 'not_moved_in'
           ? 'This tenant moved in after that month ended.'
-          : 'Nothing to generate.';
+          : reason === 'moved_out'
+            ? 'This tenant moved out before that month started.'
+            : 'Nothing to generate.';
       return res.status(409).json({ error: why, ...result });
     }
 

@@ -205,7 +205,7 @@ const BillsResult = ({ result, rooms }) => {
       {result.removed > 0 && (
         <p className="text-text-secondary -mt-1">
           Removed {result.removed} {name} bill{result.removed === 1 ? '' : 's'} made by mistake
-          for tenants who moved in after {name}.
+          for tenants who weren't living here in {name}.
         </p>
       )}
       {missing.length > 0 && (

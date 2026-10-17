@@ -83,7 +83,7 @@ const TenantHome = () => {
 
           <dl className="mt-4 space-y-2 text-text-secondary">
             <div className="flex justify-between gap-4">
-              <dt>{seatRentLabel(bill.billing_month, tenant.check_in_date)}</dt><dd className="text-text-primary">{rupees(bill.seat_rent)}</dd>
+              <dt>{seatRentLabel(bill.billing_month, tenant.check_in_date, tenant.check_out_date)}</dt><dd className="text-text-primary">{rupees(bill.seat_rent)}</dd>
             </div>
             {Number(bill.ac_charge) > 0 && (
               <div className="flex justify-between gap-4">

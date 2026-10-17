@@ -89,10 +89,10 @@ const paidLabel = (date) => {
   return date === todayISO() ? `Paid today, ${dayMonthLabel(date)}` : `Paid on ${dayMonthLabel(date)}`
 }
 
-const BillCard = ({ bill, checkInDate, onMarkPaid, busy }) => {
+const BillCard = ({ bill, checkInDate, checkOutDate, onMarkPaid, busy }) => {
   const paid = bill.status === 'paid'
   const rows = [
-    [seatRentLabel(bill.billing_month, checkInDate), bill.seat_rent],
+    [seatRentLabel(bill.billing_month, checkInDate, checkOutDate), bill.seat_rent],
     ...(Number(bill.ac_charge) > 0 ? [['AC', bill.ac_charge]] : []),
     ['Electricity', bill.electricity_charge],
   ]
@@ -627,7 +627,7 @@ const TenantDetail = () => {
         <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-[18px] lg:items-start">
           <div className="flex flex-col gap-4 lg:gap-[18px]">
             {latest ? (
-              <BillCard bill={latest} checkInDate={tenant.check_in_date} onMarkPaid={markPaid} busy={payingId === latest.id} />
+              <BillCard bill={latest} checkInDate={tenant.check_in_date} checkOutDate={tenant.check_out_date} onMarkPaid={markPaid} busy={payingId === latest.id} />
             ) : (
               <Card className="px-4 py-[18px]">
                 <CardTitle>No bills yet</CardTitle>

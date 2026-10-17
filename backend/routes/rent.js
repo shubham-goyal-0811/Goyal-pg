@@ -44,10 +44,12 @@ rentRouter.post('/generate', async (req, res) => {
       return res.status(400).json({ error: 'billing_month required in YYYY-MM format' });
     }
 
+    // Tenants who moved out during or after the month still owe for the days
+    // they were here, so they're included alongside everyone still living here.
     const { data: tenants, error } = await supabase
       .from('tenants')
       .select(TENANT_BILLING_SELECT)
-      .eq('status', 'active');
+      .or(`status.eq.active,check_out_date.gte.${billing_month}-01`);
 
     if (error) throw error;
 

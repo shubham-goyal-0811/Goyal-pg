@@ -107,16 +107,24 @@ export const relativeLabel = (value) => {
 
 /**
  * Seat rent label for a bill, naming the days charged when the tenant moved in
- * partway through its month: ('2026-09-01', '2026-09-16') → 'Seat rent, 15 of
- * 30 days'. The cut itself is made by daysStayed in backend/services/rent.js.
+ * or out partway through its month: ('2026-09-01', '2026-09-16') → 'Seat rent,
+ * 15 of 30 days'. The cut itself is made by daysStayed in
+ * backend/services/rent.js; both count the move-in and move-out days.
  */
-export const seatRentLabel = (billingMonth, checkInDate) => {
+export const seatRentLabel = (billingMonth, checkInDate, checkOutDate) => {
   const month = String(billingMonth ?? '').slice(0, 7)
-  const checkIn = String(checkInDate ?? '').slice(0, 10)
-  if (!month || checkIn.slice(0, 7) !== month || checkIn.slice(8) === '01') return 'Seat rent'
-  const [y, m, d] = checkIn.split('-').map(Number)
+  if (!month || !checkInDate) return 'Seat rent'
+  const [y, m] = month.split('-').map(Number)
   const total = new Date(y, m, 0).getDate()
-  return `Seat rent, ${total - d + 1} of ${total} days`
+  const first = `${month}-01`
+  const last = `${month}-${String(total).padStart(2, '0')}`
+  const checkIn = String(checkInDate).slice(0, 10)
+  const checkOut = checkOutDate ? String(checkOutDate).slice(0, 10) : null
+  const from = checkIn > first ? checkIn : first
+  const to = checkOut && checkOut < last ? checkOut : last
+  if (from > to) return 'Seat rent'
+  const days = Number(to.slice(8)) - Number(from.slice(8)) + 1
+  return days === total ? 'Seat rent' : `Seat rent, ${days} of ${total} days`
 }
 
 /** Today as 'YYYY-MM-DD' in the user's own timezone — for <input type="date">. */
