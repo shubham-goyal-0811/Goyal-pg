@@ -1,9 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, MapPin, Phone, MessageCircle } from 'lucide-react'
 import PublicNav from '../../components/public/PublicNav'
 import EnquiryForm from '../../components/public/EnquiryForm'
 import { pg, formatPhone, fullAddress } from '../../content/pg'
+import { rupees } from '../../lib/format'
+import { API_BASE_URL } from '../../lib/env'
 import heroImage from '../../assets/hero.png'
 
 /**
@@ -31,10 +33,11 @@ import heroImage from '../../assets/hero.png'
  * Google renders JS before reading structured data; link-preview scrapers do
  * not, which is why the plain og: tags stay static in index.html.
  */
-const useBusinessSchema = () => {
+const useBusinessSchema = (tiers) => {
   useEffect(() => {
-    const cheapest = Math.min(...pg.tiers.map((t) => t.seatRent))
-    const dearest = Math.max(...pg.tiers.map((t) => t.seatRent))
+    const rents = (tiers ?? []).map((t) => t.seatRent)
+    const cheapest = Math.min(...rents)
+    const dearest = Math.max(...rents)
 
     const schema = {
       '@context': 'https://schema.org',
@@ -42,7 +45,13 @@ const useBusinessSchema = () => {
       name: pg.name,
       description: pg.tagline,
       telephone: `+91${pg.phone}`,
-      priceRange: `₹${cheapest}–₹${dearest} per seat per month`,
+      // Only once live prices have loaded. A guessed range in structured data
+      // is worse than none: it is what a search result quotes back to people.
+      ...(rents.length > 0 && {
+        priceRange: cheapest === dearest
+          ? `₹${cheapest} per seat per month`
+          : `₹${cheapest}–₹${dearest} per seat per month`,
+      }),
       address: {
         '@type': 'PostalAddress',
         streetAddress: [pg.address.line1, pg.address.locality].filter(Boolean).join(', '),
@@ -63,7 +72,72 @@ const useBusinessSchema = () => {
     tag.text = JSON.stringify(schema)
     document.head.appendChild(tag)
     return () => { document.head.removeChild(tag) }
+  }, [tiers])
+}
+
+// ── Live prices ───────────────────────────────────────────────────────────────
+// From GET /public/pricing, which the backend answers from memory and refreshes
+// whenever a room's price is changed in Settings. See services/publicPricing.js.
+//
+// The one thing this page must not do is show a price that might be wrong. So
+// there is no hard-coded fallback list: if the API hasn't answered within a few
+// seconds, the section says "call for current rent" instead, and swaps the real
+// prices in if they arrive later.
+//
+// Deliberately a plain fetch, not lib/api.js or React Query: this needs no
+// session, sends no Authorization header, and must not share a cache with the
+// signed-in apps.
+const SLOW_AFTER_MS = 3000
+// A sleeping free-tier backend can take most of a minute to wake. Keep waiting
+// that long in the background; the fallback is already on screen meanwhile.
+const GIVE_UP_AFTER_MS = 60000
+
+const usePublicPricing = () => {
+  const [state, setState] = useState({ tiers: null, slow: false, failed: false })
+
+  useEffect(() => {
+    let done = false
+    const ctrl = new AbortController()
+    const slowTimer = setTimeout(() => setState((s) => ({ ...s, slow: true })), SLOW_AFTER_MS)
+    const giveUpTimer = setTimeout(() => ctrl.abort(), GIVE_UP_AFTER_MS)
+    const stopTimers = () => { clearTimeout(slowTimer); clearTimeout(giveUpTimer) }
+
+    fetch(`${API_BASE_URL}/public/pricing`, { signal: ctrl.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((body) => {
+        if (done) return
+        const tiers = Array.isArray(body?.tiers) && body.tiers.length > 0 ? body.tiers : null
+        setState({ tiers, slow: false, failed: !tiers })
+      })
+      .catch(() => { if (!done) setState((s) => ({ ...s, failed: true })) })
+      .finally(stopTimers)
+
+    return () => { done = true; ctrl.abort(); stopTimers() }
   }, [])
+
+  return state
+}
+
+const FLOOR_NAMES = ['Ground', 'First', 'Second', 'Third', 'Fourth', 'Fifth']
+
+// [1] → 'First floor', [1, 2] → 'First & Second floors'
+const floorLabel = (floors) => {
+  if (floors.some((f) => !FLOOR_NAMES[f])) return `Floor ${floors.join(' & ')}`
+  return `${floors.map((f) => FLOOR_NAMES[f]).join(' & ')} floor${floors.length > 1 ? 's' : ''}`
+}
+
+const tierName = (tier) =>
+  `${tier.capacity === 1 ? 'Single room' : `${tier.capacity}-sharing`}, ${tier.hasAc ? 'AC' : 'non-AC'}`
+
+// What the AC costs, stated the way the bill will state it.
+const acLine = (tier) => {
+  if (!tier.hasAc) return null
+  if (tier.acChargeVaries) return 'AC charge depends on the room — ask us'
+  if (!tier.acCharge) return 'AC included in the rent'
+  return `+ ${rupees(tier.acCharge)} a month if you use the AC`
 }
 
 const Section = ({ id, title, lead, children, tint = false }) => (
@@ -126,36 +200,67 @@ const Intro = () => (
   </Section>
 )
 
-const RoomsPricing = () => (
+const PricingFallback = () => (
+  <div className="bg-bg border border-border rounded-xl p-5 max-w-xl">
+    <p className="font-heading font-bold text-text-primary">Call for current rent</p>
+    <p className="text-sm text-text-secondary mt-1">
+      We couldn't load today's prices just now. Call us and we'll tell you the rent for each room type.
+    </p>
+    <a
+      href={`tel:+91${pg.phone}`}
+      className="inline-flex items-center gap-2 mt-4 h-[44px] px-5 bg-accent text-surface rounded-md font-semibold hover:opacity-90"
+    >
+      <Phone size={18} /> {formatPhone(pg.phone)}
+    </a>
+  </div>
+)
+
+const RoomsPricing = ({ tiers, slow, failed }) => (
   <Section
     id="rooms"
     tint
     title="Rooms & rent"
     lead="Rent is per seat, per month. Pick the room type, not the room."
   >
-    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {pg.tiers.map((tier) => (
-        <div key={tier.name} className="bg-bg border border-border rounded-xl p-5 flex flex-col">
-          <p className="font-heading font-bold text-text-primary">{tier.name}</p>
-          <p className="text-sm text-text-secondary mt-0.5">
-            {tier.floor} · {tier.capacity} seats
-          </p>
+    {tiers ? (
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {tiers.map((tier) => {
+          const note = pg.roomNotes?.[tier.key]
+          const ac = acLine(tier)
+          return (
+            <div key={tier.key} className="bg-bg border border-border rounded-xl p-5 flex flex-col">
+              <p className="font-heading font-bold text-text-primary">{tierName(tier)}</p>
+              <p className="text-sm text-text-secondary mt-0.5">
+                {floorLabel(tier.floors)} · {tier.capacity} {tier.capacity === 1 ? 'seat' : 'seats'}
+              </p>
 
-          <p className="mt-4 text-3xl font-heading font-bold text-text-primary">
-            ₹{tier.seatRent.toLocaleString('en-IN')}
-            <span className="text-base font-body font-normal text-text-secondary"> / seat / month</span>
-          </p>
+              <p className="mt-4 text-3xl font-heading font-bold text-text-primary">
+                {tier.seatRentVaries && (
+                  <span className="text-base font-body font-normal text-text-secondary">from </span>
+                )}
+                {rupees(tier.seatRent)}
+                <span className="text-base font-body font-normal text-text-secondary"> / seat / month</span>
+              </p>
 
-          {tier.acCharge != null && (
-            <p className="text-sm text-text-secondary mt-1">
-              + ₹{tier.acCharge.toLocaleString('en-IN')} a month if you use the AC
-            </p>
-          )}
+              {ac && <p className="text-sm text-text-secondary mt-1">{ac}</p>}
 
-          <p className="text-sm text-text-secondary mt-4 pt-4 border-t border-border">{tier.note}</p>
-        </div>
-      ))}
-    </div>
+              {note && (
+                <p className="text-sm text-text-secondary mt-4 pt-4 border-t border-border">{note}</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    ) : slow || failed ? (
+      <PricingFallback />
+    ) : (
+      // First ~3 seconds: the shape of the cards, so the page doesn't jump.
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4" aria-hidden="true">
+        {[0, 1].map((i) => (
+          <div key={i} className="h-44 bg-border/60 rounded-xl animate-pulse" />
+        ))}
+      </div>
+    )}
 
     <ul className="mt-8 space-y-2 max-w-2xl">
       {pg.billingNotes.map((note) => (
@@ -280,14 +385,15 @@ const Footer = () => (
 )
 
 const PublicLanding = () => {
-  useBusinessSchema()
+  const pricing = usePublicPricing()
+  useBusinessSchema(pricing.tiers)
 
   return (
     <div className="min-h-screen bg-bg">
       <PublicNav />
       <Hero />
       <Intro />
-      <RoomsPricing />
+      <RoomsPricing {...pricing} />
       <Amenities />
       <PhotoGallery />
       <Rules />
