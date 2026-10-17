@@ -51,6 +51,18 @@ export const monthLabel = (value) => {
   return d ? d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) : '—'
 }
 
+/** '2026-07-01' → 'July' — when the year is obvious ("July bills"). */
+export const monthName = (value) => {
+  const d = parse(value)
+  return d ? d.toLocaleDateString('en-IN', { month: 'long' }) : '—'
+}
+
+/** '2026-07-14' → '14 Jul' — for recent dates where the year is noise. */
+export const dayMonthLabel = (value) => {
+  const d = parse(value)
+  return d ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'
+}
+
 /** '2026-07-14' → '14 Jul 2026' — the default for any date shown to a user. */
 export const dateLabel = (value) => {
   const d = parse(value)

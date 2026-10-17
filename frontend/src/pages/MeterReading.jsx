@@ -1,19 +1,26 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { useApiQuery } from '../lib/queries'
 import { dateLabel, todayISO } from '../lib/format'
 import toast from 'react-hot-toast'
 import { Loader2 } from 'lucide-react'
 import Skeleton from '../components/Skeleton'
+import { Card, Button, Field, PageTitle, ConfirmDialog, inputCls } from '../components/ui'
 
 const MeterReading = () => {
   const { roomId } = useParams()
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [reading, setReading] = useState('')
   const [date, setDate] = useState(todayISO)
   const [previous, setPrevious] = useState(null)
   const [loadingPrev, setLoadingPrev] = useState(true)
+  const [confirmLower, setConfirmLower] = useState(false)
+
+  // The URL carries the room's id; people know it by its number.
+  const { data: rooms } = useApiQuery('/rooms')
+  const roomNo = rooms?.find(r => String(r.id) === String(roomId))?.room_number
 
   // Show the last reading. Entering a value lower than this is the one mistake
   // that corrupts a bill silently — the split skips any period that runs
@@ -26,22 +33,14 @@ const MeterReading = () => {
   }, [roomId])
 
   const value = Number(reading)
-  const goesBackwards = previous && reading !== '' && value < previous.reading_value
+  const goesBackwards = Boolean(previous && reading !== '' && value < previous.reading_value)
   const unitsUsed = previous && reading !== '' && !goesBackwards
     ? value - previous.reading_value
     : null
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (reading === '') return toast.error('Please enter a reading value')
-    if (isNaN(value) || value < 0) return toast.error('Reading must be a non-negative number')
-
-    if (goesBackwards && !window.confirm(
-      `This reading (${value}) is lower than the last one (${previous.reading_value} on ${dateLabel(previous.reading_date)}).\n\n` +
-      `That period will be skipped when bills are generated. Only continue if the meter was actually reset or replaced.\n\nSave anyway?`
-    )) return
-
-    setLoading(true)
+  const save = async () => {
+    setConfirmLower(false)
+    setSaving(true)
     try {
       await api.post(`/rooms/${roomId}/meter-readings`, {
         reading_date: date,
@@ -54,89 +53,73 @@ const MeterReading = () => {
       toast.success('Meter reading saved')
       navigate(-1)
     } catch (err) {
-      toast.error(err.message || 'Failed to save reading')
+      toast.error(err.message || "Couldn't save the reading")
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
-  const inputCls = 'w-full px-4 py-3 rounded-md border border-border bg-bg text-text-primary focus:outline-none focus:border-accent transition-colors'
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (reading === '' || Number.isNaN(value) || value < 0) return toast.error('Enter the number on the meter')
+    if (goesBackwards) return setConfirmLower(true)
+    save()
+  }
 
   return (
-    <div className="max-w-xl mx-auto">
-      <header className="mb-8">
-        <h1 className="text-3xl font-heading font-bold text-text-primary">Meter Reading</h1>
-        <p className="text-text-secondary mt-1">Record electricity usage for Room {roomId}</p>
-      </header>
+    <div className="flex flex-col gap-3.5 max-w-xl">
+      <PageTitle>Meter reading{roomNo && `, Room ${roomNo}`}</PageTitle>
 
-      <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
-        {/* Hold the box's place while the last reading loads — it is the number
-            the admin checks before typing, so it must not pop in under them. */}
-        {loadingPrev ? (
-          <div className="mb-6 p-4 rounded-md bg-bg border border-border">
+      <Card className="px-4 py-[18px]">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
+          {/* Hold the line's place while the last reading loads — it is the
+              number the admin checks before typing, so it must not pop in
+              under them. */}
+          {loadingPrev ? (
             <Skeleton className="h-5 w-56" />
-          </div>
-        ) : (
-          <div className="mb-6 p-4 rounded-md bg-bg border border-border">
-            {previous ? (
-              <p className="text-sm text-text-secondary">
-                Last reading:{' '}
-                <span className="font-semibold text-text-primary">{previous.reading_value}</span>
-                {' '}on {dateLabel(previous.reading_date)}
-              </p>
-            ) : (
-              <p className="text-sm text-text-secondary">
-                No previous reading for this room — this becomes the opening baseline.
-                Electricity can only be billed from the second reading onward.
-              </p>
-            )}
-          </div>
-        )}
+          ) : previous ? (
+            <p>Last reading was <b className="font-semibold">{previous.reading_value}</b> on {dateLabel(previous.reading_date)}.</p>
+          ) : (
+            <p className="text-text-secondary">
+              No reading yet for this room. This one becomes the starting point, and
+              electricity is charged from the next reading on.
+            </p>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">Reading Date</label>
-            <input
-              type="date"
-              value={date}
-              max={todayISO()}
-              onChange={(e) => setDate(e.target.value)}
-              className={inputCls}
-            />
-          </div>
+          <Field label="Date">
+            <input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} className={inputCls()} />
+          </Field>
 
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">Meter Value (Units)</label>
-            <input
-              type="number"
-              min="0"
-              value={reading}
-              onChange={(e) => setReading(e.target.value)}
-              placeholder="e.g. 14502"
-              className={inputCls}
-            />
-            {goesBackwards && (
-              <p className="text-warning text-sm mt-2">
-                Lower than the last reading ({previous.reading_value}). Check for a typo —
-                that period gets skipped when bills are generated.
-              </p>
-            )}
-            {unitsUsed !== null && (
-              <p className="text-text-secondary text-sm mt-2">
-                {unitsUsed} unit{unitsUsed === 1 ? '' : 's'} used since the last reading.
-              </p>
-            )}
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-accent text-surface px-4 py-3 rounded-md font-semibold hover:opacity-90 transition-opacity h-[44px] disabled:opacity-50 flex items-center justify-center gap-2"
+          <Field
+            label="Number on the meter"
+            error={goesBackwards ? `This is lower than the last reading (${previous.reading_value}). Check for a typo.` : null}
+            hint={unitsUsed !== null ? `${unitsUsed} unit${unitsUsed === 1 ? '' : 's'} used since the last reading.` : null}
           >
-            {loading ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : 'Save Reading'}
-          </button>
+            <input
+              inputMode="decimal"
+              value={reading}
+              onChange={(e) => setReading(e.target.value.replace(/[^\d.]/g, ''))}
+              className={inputCls(goesBackwards, 'tabular-nums')}
+            />
+          </Field>
+
+          <Button type="submit" variant="primary" disabled={saving || reading === ''}>
+            {saving ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Saving...</> : 'Save reading'}
+          </Button>
         </form>
-      </div>
+      </Card>
+
+      {confirmLower && (
+        <ConfirmDialog
+          title="This reading is lower than the last one"
+          confirmLabel="Yes, save it"
+          onConfirm={save}
+          onCancel={() => setConfirmLower(false)}
+        >
+          You entered {value}. The last reading was {previous.reading_value} on {dateLabel(previous.reading_date)}.
+          That stretch will be left out of the electricity bills. Only save it if the meter was reset or replaced.
+        </ConfirmDialog>
+      )}
     </div>
   )
 }

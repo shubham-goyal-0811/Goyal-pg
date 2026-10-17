@@ -1,89 +1,106 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { isAdmin } from '../lib/roles'
 import { api } from '../lib/api'
-import { HeaderSkeleton, TableSkeleton } from '../components/Skeleton'
+import { TitleSkeleton, PanelSkeleton } from '../components/Skeleton'
+import { Card, Dot, StatusTag, PageTitle } from '../components/ui'
 import toast from 'react-hot-toast'
+
+/**
+ * Where each tenant's police paperwork has reached. One card per tenant with
+ * the three steps as big buttons — tap the one it is at now. No dropdowns.
+ */
+
+const STEPS = [
+  { value: 'pending', label: 'Pending', tone: 'warning', border: 'border-warning' },
+  { value: 'submitted', label: 'Submitted', tone: 'dark', border: 'border-text-primary' },
+  { value: 'verified', label: 'Verified', tone: 'success', border: 'border-success' },
+]
+const ORDER = { pending: 0, submitted: 1, verified: 2 }
 
 const PoliceVerification = () => {
   const { role } = useAuth()
+  const admin = isAdmin(role)
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     api.get('/police-verification')
-      .then(res => setRecords(res))
-      .catch(() => toast.error('Failed to load records'))
+      // Sorted once, on arrival: what still needs doing comes first. Not
+      // re-sorted on every tap, or a card would jump away from under the
+      // finger that just changed it.
+      .then(res => setRecords(res.slice().sort((a, b) =>
+        (ORDER[a.status] ?? 0) - (ORDER[b.status] ?? 0)
+        || String(a.tenants?.full_name).localeCompare(String(b.tenants?.full_name)))))
+      .catch(() => toast.error("Couldn't load police verification"))
       .finally(() => setLoading(false))
   }, [])
 
-  const handleStatusChange = async (tenantId, newStatus) => {
+  const setStatus = async (tenantId, status) => {
+    const before = records
+    setRecords(list => list.map(r => (r.tenant_id === tenantId ? { ...r, status } : r)))
     try {
-      await api.patch(`/police-verification/${tenantId}`, { status: newStatus })
-      setRecords(records.map(r => r.tenant_id === tenantId ? { ...r, status: newStatus } : r))
-      toast.success('Status updated')
+      await api.patch(`/police-verification/${tenantId}`, { status })
     } catch (err) {
-      toast.error('Failed to update status')
+      setRecords(before)
+      toast.error(err.message || "Couldn't change the status")
     }
   }
 
-  if (loading) return <div><HeaderSkeleton /><TableSkeleton rows={6} cols={4} /></div>
+  if (loading) return <div className="flex flex-col gap-3"><TitleSkeleton /><PanelSkeleton count={4} /></div>
+
+  const count = (s) => records.filter(r => r.status === s).length
 
   return (
-    <div>
-      <header className="mb-8">
-        <h1 className="text-3xl font-heading font-bold text-text-primary">Police Verification</h1>
-        <p className="text-text-secondary mt-1">Track verification status of all tenants</p>
-      </header>
+    <div className="flex flex-col gap-3 max-w-2xl">
+      <PageTitle>Police verification</PageTitle>
+      <p className="text-text-secondary px-1 pb-1">
+        {count('pending')} pending · {count('submitted')} submitted · {count('verified')} verified
+      </p>
 
-      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-bg border-b border-border">
-                <th className="p-4 font-semibold text-text-primary">Tenant</th>
-                <th className="p-4 font-semibold text-text-primary">Room</th>
-                <th className="p-4 font-semibold text-text-primary">Status</th>
-                <th className="p-4 font-semibold text-text-primary">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {records.length === 0 ? (
-                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No tenants found</td></tr>
-              ) : records.map((record) => (
-                <tr key={record.id} className="border-b border-border hover:bg-bg/50 transition-colors">
-                  <td className="p-4 font-medium">{record.tenants?.full_name}</td>
-                  <td className="p-4">{record.tenants?.rooms?.room_number}</td>
-                  <td className="p-4">
-                    <span className={`
-                      px-3 py-1 rounded-full text-xs font-semibold
-                      ${record.status === 'verified' ? 'bg-success/20 text-success' : ''}
-                      ${record.status === 'submitted' ? 'bg-warning/20 text-warning' : ''}
-                      ${record.status === 'pending' ? 'bg-text-secondary/20 text-text-secondary' : ''}
-                    `}>
-                      {record.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    {role === 'admin' ? (
-                      <select
-                        className="bg-surface border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-accent"
-                        value={record.status}
-                        onChange={(e) => handleStatusChange(record.tenant_id, e.target.value)}
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="submitted">Submitted</option>
-                        <option value="verified">Verified</option>
-                      </select>
-                    ) : (
-                      <span className="text-text-secondary text-sm">View only</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {records.length === 0 && (
+        <Card className="px-4 py-7 text-center text-text-secondary">Nobody is living here yet.</Card>
+      )}
+
+      {records.map(r => (
+        <Card key={r.id} className="px-3 pt-3.5 pb-3 flex flex-col gap-2.5">
+          <div className="flex justify-between items-center gap-2 px-1">
+            <span className="font-semibold text-[17px]">{r.tenants?.full_name}</span>
+            {admin ? (
+              <span className="text-text-secondary">Room {r.tenants?.rooms?.room_number}</span>
+            ) : (
+              <StatusTag tone={STEPS.find(s => s.value === r.status)?.tone ?? 'warning'}>
+                {STEPS.find(s => s.value === r.status)?.label ?? r.status}
+              </StatusTag>
+            )}
+          </div>
+          {!admin && <p className="text-text-secondary px-1 -mt-1.5">Room {r.tenants?.rooms?.room_number}</p>}
+
+          {admin && (
+            <div className="grid grid-cols-[1fr_1.15fr_1fr] gap-1.5" role="radiogroup" aria-label={`Police verification for ${r.tenants?.full_name}`}>
+              {STEPS.map(step => {
+                const current = r.status === step.value
+                return (
+                  <button
+                    key={step.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={current}
+                    onClick={() => !current && setStatus(r.tenant_id, step.value)}
+                    className={`h-12 flex items-center justify-center gap-1.5 rounded-lg font-heading text-[15px]
+                      ${current
+                        ? `border-2 ${step.border} bg-surface text-text-primary font-bold`
+                        : 'border border-border bg-bg text-text-secondary font-semibold'}`}
+                  >
+                    {current && <Dot tone={step.tone} />}
+                    {step.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </Card>
+      ))}
     </div>
   )
 }

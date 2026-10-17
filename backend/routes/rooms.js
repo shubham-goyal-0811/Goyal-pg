@@ -3,7 +3,7 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
-const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
+const { ROLES, ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
 const { invalidatePricing } = require('../services/publicPricing');
 
@@ -15,6 +15,11 @@ router.use('/:id/meter-readings', meterReadingsRouter);
 
 router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
+    // Rent is admin-only everywhere else (GET /tenants/:id omits it for
+    // gatekeepers), so the room grid must not leak it either. Gatekeepers get
+    // names and seats only.
+    const isAdmin = req.user.role === ROLES.ADMIN;
+
     const { data: rooms, error } = await supabase
       .from('rooms')
       .select(`
@@ -22,7 +27,7 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
         tenants (
           id, full_name, status,
           rent_payments (
-            id, status, billing_month
+            id, status, billing_month, total_amount, created_at
           )
         )
       `)
@@ -44,11 +49,16 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
           const latest = (t.rent_payments || [])
             .slice()
             .sort((a, b) => String(b.billing_month).localeCompare(String(a.billing_month)))[0];
+          if (!isAdmin) return { id: t.id, full_name: t.full_name };
           return {
             id: t.id,
             full_name: t.full_name,
             rent_status: latest ? latest.status : 'none',
-            rent_month: latest ? latest.billing_month : null
+            rent_month: latest ? latest.billing_month : null,
+            // The dashboard leads with who owes what, and when the month's
+            // bills were made. Both come off the same latest bill.
+            rent_amount: latest ? latest.total_amount : null,
+            rent_billed_at: latest ? latest.created_at : null
           };
         })
       };

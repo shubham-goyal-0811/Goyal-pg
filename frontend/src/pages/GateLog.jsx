@@ -1,152 +1,190 @@
 import { useState, useEffect } from 'react'
 import { api } from '../lib/api'
-import { relativeLabel } from '../lib/format'
+import { useApiQuery } from '../lib/queries'
+import { relativeLabel, timeLabel, todayISO } from '../lib/format'
 import toast from 'react-hot-toast'
-import { Plus, X } from 'lucide-react'
-import { HeaderSkeleton, TableSkeleton } from '../components/Skeleton'
+import { Plus } from 'lucide-react'
+import { TitleSkeleton, PanelSkeleton } from '../components/Skeleton'
+import { Card, CardTitle, Button, Field, PageTitle, inputCls } from '../components/ui'
 
-const GateLog = () => {
-  const [logs, setLogs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [tenants, setTenants] = useState([])
+/**
+ * The gatekeeper's screen. Two jobs: write down who came in, and mark them
+ * out on the way back. So it opens on one big "Add visitor" button and the
+ * people inside right now, each with their own "Mark out".
+ */
+
+// Local calendar day of a timestamp, to compare with todayISO().
+const dayOf = (value) => {
+  const d = new Date(value)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+const isToday = (value) => value && dayOf(value) === todayISO()
+const whenLabel = (value) => (isToday(value) ? timeLabel(value) : relativeLabel(value))
+
+// Who the entry is for. An entry with no visitor name is a tenant coming in.
+const who = (log) => log.visitor_name || log.tenants?.full_name || 'Unknown'
+const visiting = (log) => {
+  const room = log.tenants?.rooms?.room_number
+  if (!log.tenants) return ''
+  if (!log.visitor_name) return `Tenant${room ? ` · Room ${room}` : ''}`
+  return `Visiting ${log.tenants.full_name}${room ? ` · Room ${room}` : ''}`
+}
+
+const AddVisitor = ({ onSaved, onCancel }) => {
+  const { data: tenants = [] } = useApiQuery('/tenants')
   const [form, setForm] = useState({ tenant_id: '', visitor_name: '' })
   const [saving, setSaving] = useState(false)
+  const empty = !form.visitor_name.trim() && !form.tenant_id
 
-  useEffect(() => {
-    fetchLogs()
-    api.get('/tenants').then(res => setTenants(res)).catch(() => {})
-  }, [])
-
-  const fetchLogs = async () => {
-    try {
-      const res = await api.get('/gate-log')
-      setLogs(res)
-    } catch (err) {
-      toast.error('Failed to load gate log')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleAdd = async (e) => {
+  const save = async (e) => {
     e.preventDefault()
+    if (empty) return
     setSaving(true)
     try {
       const res = await api.post('/gate-log', {
         tenant_id: form.tenant_id || null,
-        visitor_name: form.visitor_name || null,
+        visitor_name: form.visitor_name.trim() || null,
       })
-      setLogs([res, ...logs])
-      setShowForm(false)
-      setForm({ tenant_id: '', visitor_name: '' })
-      toast.success('Entry added')
+      onSaved(res)
+      toast.success(`${res.visitor_name || 'Entry'} marked as in`)
     } catch (err) {
-      toast.error('Failed to add entry')
+      toast.error(err.message || "Couldn't save the entry")
     } finally {
       setSaving(false)
     }
   }
 
-  const handleMarkOut = async (logId) => {
+  return (
+    <Card className="px-4 py-[18px]">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <CardTitle>New visitor</CardTitle>
+        <Field label="Visitor's name" hint="Leave empty when it is a tenant coming in">
+          <input
+            value={form.visitor_name}
+            onChange={e => setForm({ ...form, visitor_name: e.target.value })}
+            autoComplete="off"
+            className={inputCls()}
+          />
+        </Field>
+        <Field label="Visiting">
+          <select
+            value={form.tenant_id}
+            onChange={e => setForm({ ...form, tenant_id: e.target.value })}
+            className={inputCls()}
+          >
+            <option value="">Choose a tenant</option>
+            {tenants.map(t => (
+              <option key={t.id} value={t.id}>{t.full_name}{t.rooms?.room_number && ` · ${t.rooms.room_number}`}</option>
+            ))}
+          </select>
+        </Field>
+        <div className="grid grid-cols-[1fr_1.6fr] gap-2.5">
+          <Button variant="quiet" size="dialog" onClick={onCancel} disabled={saving}>Cancel</Button>
+          <Button type="submit" variant="primary" size="dialog" disabled={saving || empty}>
+            {saving ? 'Saving...' : 'Save, mark as in'}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  )
+}
+
+const GateLog = () => {
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [markingId, setMarkingId] = useState(null)
+
+  useEffect(() => {
+    api.get('/gate-log')
+      .then(setLogs)
+      .catch(() => toast.error("Couldn't load the gate log"))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const markOut = async (logId) => {
+    setMarkingId(logId)
     try {
       const res = await api.patch(`/gate-log/${logId}/mark-out`)
-      setLogs(logs.map(l => l.id === logId ? res : l))
+      setLogs(list => list.map(l => (l.id === logId ? { ...l, ...res } : l)))
       toast.success('Marked out')
     } catch (err) {
-      toast.error('Failed to mark out')
+      toast.error(err.message || "Couldn't mark out")
+    } finally {
+      setMarkingId(null)
     }
   }
 
-  if (loading) return <div><HeaderSkeleton /><TableSkeleton rows={6} cols={4} /></div>
+  if (loading) return <div className="flex flex-col gap-3.5"><TitleSkeleton /><PanelSkeleton count={3} /></div>
+
+  const inside = logs.filter(l => !l.out_time)
+  const leftToday = logs.filter(l => l.out_time && isToday(l.out_time))
+  const earlier = logs.filter(l => l.out_time && !isToday(l.out_time))
+
+  const sectionTitle = 'font-heading font-bold text-lg pt-2 px-1'
 
   return (
-    <div>
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-        <header>
-          <h1 className="text-3xl font-heading font-bold text-text-primary">Gate Log</h1>
-          <p className="text-text-secondary mt-1">Visitor and tenant entry/exit records</p>
-        </header>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center justify-center gap-2 bg-accent text-surface px-4 py-3 rounded-md font-semibold hover:opacity-90 transition-opacity h-[44px]"
-        >
-          <Plus size={20} /> Add Entry
-        </button>
-      </div>
+    <div className="flex flex-col gap-3.5 max-w-2xl">
+      <PageTitle>Gate log</PageTitle>
 
-      {/* Add Entry Modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl border border-border shadow-lg w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-heading font-bold">New Gate Entry</h2>
-              <button onClick={() => setShowForm(false)}><X size={20} /></button>
-            </div>
-            <form onSubmit={handleAdd} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Visitor Name (if external)</label>
-                <input
-                  className="w-full px-3 py-2 border border-border rounded-md bg-bg focus:outline-none focus:border-accent"
-                  placeholder="e.g. Amazon Delivery"
-                  value={form.visitor_name}
-                  onChange={e => setForm({ ...form, visitor_name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Visiting Tenant</label>
-                <select
-                  className="w-full px-3 py-2 border border-border rounded-md bg-bg focus:outline-none focus:border-accent"
-                  value={form.tenant_id}
-                  onChange={e => setForm({ ...form, tenant_id: e.target.value })}
-                >
-                  <option value="">Select tenant...</option>
-                  {tenants.map(t => (
-                    <option key={t.id} value={t.id}>{t.full_name}</option>
-                  ))}
-                </select>
-              </div>
-              <button type="submit" disabled={saving} className="w-full bg-accent text-surface py-2 rounded-md font-semibold disabled:opacity-50">
-                {saving ? 'Saving...' : 'Add Entry'}
-              </button>
-            </form>
-          </div>
-        </div>
+      {adding ? (
+        <AddVisitor
+          onSaved={(entry) => { setLogs(list => [entry, ...list]); setAdding(false) }}
+          onCancel={() => setAdding(false)}
+        />
+      ) : (
+        <Button variant="primary" onClick={() => setAdding(true)}>
+          <Plus size={20} strokeWidth={2.2} aria-hidden="true" />Add visitor
+        </Button>
       )}
 
-      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-bg border-b border-border">
-                <th className="p-4 font-semibold text-text-primary">Visitor</th>
-                <th className="p-4 font-semibold text-text-primary">Visiting</th>
-                <th className="p-4 font-semibold text-text-primary">In Time</th>
-                <th className="p-4 font-semibold text-text-primary">Out Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.length === 0 ? (
-                <tr><td colSpan={4} className="p-8 text-center text-text-secondary">No entries yet</td></tr>
-              ) : logs.map((log) => (
-                <tr key={log.id} className="border-b border-border hover:bg-bg/50 transition-colors">
-                  <td className="p-4 font-medium">{log.visitor_name || 'Tenant Entry'}</td>
-                  <td className="p-4">{log.tenants?.full_name || '—'} {log.tenants?.rooms?.room_number ? `(Rm ${log.tenants.rooms.room_number})` : ''}</td>
-                  <td className="p-4">{relativeLabel(log.in_time)}</td>
-                  <td className="p-4">
-                    {log.out_time
-                      ? relativeLabel(log.out_time)
-                      : <button onClick={() => handleMarkOut(log.id)} className="text-accent text-sm font-semibold hover:underline">Mark Out</button>
-                    }
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <h2 className={sectionTitle}>Inside now</h2>
+      {inside.length === 0 ? (
+        <Card className="px-4 py-5 text-center text-text-secondary">No visitors inside right now.</Card>
+      ) : inside.map(log => (
+        <Card key={log.id} className="px-4 py-3.5 flex flex-col gap-2.5">
+          <div className="flex justify-between items-baseline gap-2">
+            <span className="font-semibold text-[17px]">{who(log)}</span>
+            <span className="text-[15px] text-text-secondary whitespace-nowrap">In {whenLabel(log.in_time)}</span>
+          </div>
+          {visiting(log) && <p className="text-text-secondary -mt-1.5">{visiting(log)}</p>}
+          <Button onClick={() => markOut(log.id)} disabled={markingId === log.id}>
+            {markingId === log.id ? 'Saving...' : 'Mark out'}
+          </Button>
+        </Card>
+      ))}
+
+      <h2 className={sectionTitle}>Left today</h2>
+      <LeftList logs={leftToday} empty="Nobody has left yet today." />
+
+      {earlier.length > 0 && (
+        <>
+          <h2 className={sectionTitle}>Earlier</h2>
+          <LeftList logs={earlier} />
+        </>
+      )}
     </div>
   )
 }
+
+const LeftList = ({ logs, empty }) => (
+  <Card className="overflow-hidden">
+    {logs.length === 0 && <p className="px-4 py-5 text-center text-text-secondary">{empty}</p>}
+    {logs.map(log => (
+      <div key={log.id} className="px-4 py-3 border-b border-border last:border-b-0">
+        <div className="flex justify-between gap-2">
+          <span className="font-semibold">{who(log)}</span>
+          <span className="text-[15px] text-text-secondary text-right">
+            {isToday(log.out_time)
+              ? `${timeLabel(log.in_time)} – ${timeLabel(log.out_time)}`
+              : relativeLabel(log.in_time)}
+          </span>
+        </div>
+        {visiting(log) && <p className="text-[15px] text-text-secondary">{visiting(log)}</p>}
+      </div>
+    ))}
+  </Card>
+)
 
 export default GateLog

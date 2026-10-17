@@ -27,6 +27,30 @@ export const HeaderSkeleton = () => (
   </div>
 )
 
+/** The office app's page title — a single line, no subtitle under it. */
+export const TitleSkeleton = () => (
+  <Skeleton className="h-8 w-48 mb-4" />
+)
+
+/**
+ * Rows stacked inside one card — the shape of the tenant list, rent history
+ * and the dashboard's "hasn't paid" card.
+ */
+export const ListSkeleton = ({ rows = 5, tag = true }) => (
+  <div className="bg-surface border border-border rounded-[10px] overflow-hidden">
+    <div className="p-4"><Skeleton className="h-6 w-3/5" /></div>
+    {Array.from({ length: rows }).map((_, i) => (
+      <div key={i} className="border-t border-border px-4 h-[60px] flex items-center justify-between gap-4">
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-3.5 w-1/3" />
+        </div>
+        {tag && <Skeleton className="h-7 w-[72px] rounded-lg" />}
+      </div>
+    ))}
+  </div>
+)
+
 /** One card in a grid. `lines` matches how many rows of content it will hold. */
 export const CardSkeleton = ({ lines = 3 }) => (
   <div className="bg-surface border border-border rounded-xl p-5">
@@ -108,15 +132,22 @@ export const RouteSkeleton = () => (
 export const AppSkeleton = ({ path }) => {
   if (path.startsWith('/admin')) {
     return (
-      <div className="flex h-screen bg-bg">
-        <div className="hidden md:flex w-64 bg-surface border-r border-border flex-col p-6 gap-8">
-          <Skeleton className="h-8 w-32" />
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+      <div className="min-h-screen bg-bg md:grid md:grid-cols-[248px_1fr]">
+        <div className="hidden md:flex h-screen bg-surface border-r border-border flex-col px-3.5 py-5 gap-6">
+          <Skeleton className="h-7 w-28 mx-3" />
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
           </div>
         </div>
-        <div className="flex-1 overflow-hidden p-4 md:p-8 pt-16 md:pt-8 w-full">
-          <div className="max-w-6xl mx-auto"><RouteSkeleton /></div>
+        <div className="min-w-0">
+          <div className="md:hidden h-[60px] bg-surface border-b border-border flex items-center gap-3 px-3">
+            <Skeleton className="h-11 w-[92px] rounded-lg" />
+            <Skeleton className="h-5 w-24" />
+          </div>
+          <div className="px-4 pt-5 md:px-10 md:py-8 max-w-[1000px]">
+            <TitleSkeleton />
+            <PanelSkeleton count={3} />
+          </div>
         </div>
       </div>
     )

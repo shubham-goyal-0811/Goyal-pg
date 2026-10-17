@@ -1,185 +1,166 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { isAdmin } from '../lib/roles'
 import { api } from '../lib/api'
+import { rupees } from '../lib/format'
 import toast from 'react-hot-toast'
-import { Save } from 'lucide-react'
-import { HeaderSkeleton, PanelSkeleton } from '../components/Skeleton'
+import { TitleSkeleton, PanelSkeleton } from '../components/Skeleton'
+import { Card, CardTitle, Button, Field, YesNo, InfoRow, PageTitle, inputCls } from '../components/ui'
+
+/**
+ * Prices and room setup. One Save button for the whole page, pinned to the
+ * bottom of the screen, instead of a separate save per box that is easy to
+ * miss. Gatekeepers see the same figures as plain text, with nothing to press.
+ */
+
+const ROOM_FIELDS = ['capacity', 'seat_rent', 'ac_charge', 'has_ac']
+const str = (v) => (v == null ? '' : String(Number(v)))
 
 const Settings = () => {
   const { role } = useAuth()
-  const [settings, setSettings] = useState(null)
-  const [rooms, setRooms] = useState([])
-  const [roomEdits, setRoomEdits] = useState({})
+  const admin = isAdmin(role)
+  const [saved, setSaved] = useState(null)   // { settings, rooms } as last loaded or saved
+  const [form, setForm] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [savingRooms, setSavingRooms] = useState(false)
 
   useEffect(() => {
-    Promise.all([
-      api.get('/settings'),
-      api.get('/rooms')
-    ])
-      .then(([settingsRes, roomsRes]) => {
-        setSettings(settingsRes)
-        setRooms(roomsRes)
-        // seed roomEdits with current values
-        const edits = {}
-        roomsRes.forEach(r => {
-          edits[r.id] = { seat_rent: r.seat_rent, ac_charge: r.ac_charge, capacity: r.capacity, has_ac: r.has_ac }
-        })
-        setRoomEdits(edits)
+    Promise.all([api.get('/settings'), api.get('/rooms')])
+      .then(([settings, rooms]) => {
+        const loaded = {
+          rate: str(settings.electricity_rate_per_unit),
+          parking: str(settings.total_parking_spots),
+          rooms: Object.fromEntries(rooms.map(r => [r.id, {
+            room_number: r.room_number,
+            capacity: str(r.capacity),
+            seat_rent: str(r.seat_rent),
+            ac_charge: str(r.ac_charge),
+            has_ac: Boolean(r.has_ac),
+          }])),
+        }
+        setSaved(loaded)
+        setForm(loaded)
       })
-      .catch(() => toast.error('Failed to load settings'))
+      .catch(() => toast.error("Couldn't load settings"))
       .finally(() => setLoading(false))
   }, [])
 
-  const handleSettingsChange = (e) => {
-    setSettings(prev => ({ ...prev, [e.target.name]: e.target.value }))
-  }
+  if (loading) return <div className="flex flex-col gap-3.5"><TitleSkeleton /><PanelSkeleton count={3} /></div>
+  if (!form) return <Card className="p-6 text-center">Couldn't load settings. Try opening this page again.</Card>
 
-  const handleRoomEdit = (roomId, field, value) => {
-    setRoomEdits(prev => ({
-      ...prev,
-      [roomId]: { ...prev[roomId], [field]: value }
-    }))
-  }
+  const setRoom = (id, field, value) =>
+    setForm(f => ({ ...f, rooms: { ...f.rooms, [id]: { ...f.rooms[id], [field]: value } } }))
 
-  const handleSubmitSettings = async (e) => {
-    e.preventDefault()
+  const settingsChanged = form.rate !== saved.rate || form.parking !== saved.parking
+  const changedRooms = Object.keys(form.rooms)
+    .filter(id => ROOM_FIELDS.some(k => form.rooms[id][k] !== saved.rooms[id][k]))
+  const changed = settingsChanged || changedRooms.length > 0
+
+  const save = async () => {
     setSaving(true)
     try {
-      await api.patch('/settings', {
-        electricity_rate_per_unit: Number(settings.electricity_rate_per_unit),
-        total_parking_spots: Number(settings.total_parking_spots)
-      })
-      toast.success('Settings updated')
+      await Promise.all([
+        settingsChanged && api.patch('/settings', {
+          electricity_rate_per_unit: Number(form.rate),
+          total_parking_spots: Number(form.parking),
+        }),
+        ...changedRooms.map(id => {
+          const r = form.rooms[id]
+          return api.patch(`/rooms/${id}`, {
+            capacity: Number(r.capacity),
+            seat_rent: Number(r.seat_rent),
+            ac_charge: r.has_ac ? Number(r.ac_charge) : 0,
+            has_ac: r.has_ac,
+          })
+        }),
+      ])
+      setSaved(form)
+      toast.success('Changes saved')
     } catch (err) {
-      toast.error('Failed to update settings')
+      toast.error(err.message || "Couldn't save the changes")
     } finally {
       setSaving(false)
     }
   }
 
-  const handleSaveRooms = async () => {
-    setSavingRooms(true)
-    try {
-      await Promise.all(
-        rooms.map(room =>
-          api.patch(`/rooms/${room.id}`, {
-            capacity: Number(roomEdits[room.id].capacity),
-            seat_rent: Number(roomEdits[room.id].seat_rent),
-            ac_charge: Number(roomEdits[room.id].ac_charge),
-            has_ac: roomEdits[room.id].has_ac,
-          })
-        )
-      )
-      toast.success('Room configurations saved')
-    } catch (err) {
-      toast.error('Failed to save room changes')
-    } finally {
-      setSavingRooms(false)
-    }
+  // Digits (and one decimal point for the rate) only, so what is typed is
+  // what gets saved.
+  const digits = (v, decimal = false) => decimal ? v.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1') : v.replace(/\D/g, '')
+
+  const rooms = Object.entries(form.rooms)
+
+  if (!admin) {
+    return (
+      <div className="flex flex-col gap-3.5 max-w-2xl">
+        <PageTitle>Settings</PageTitle>
+        <Card className="pb-1">
+          <InfoRow label="Electricity rate">{rupees(form.rate)} per unit</InfoRow>
+          <InfoRow label="Parking spots">{form.parking}</InfoRow>
+        </Card>
+        <h2 className="font-heading font-bold text-xl pt-2 px-1">Rooms</h2>
+        {rooms.map(([id, r]) => (
+          <Card key={id} className="pb-1">
+            <CardTitle className="px-4 pt-4 pb-2 text-[19px]">Room {r.room_number}</CardTitle>
+            <InfoRow label="Seats">{r.capacity}</InfoRow>
+            <InfoRow label="Rent per seat">{rupees(r.seat_rent)}</InfoRow>
+            <InfoRow label="AC">{r.has_ac ? `Yes, ${rupees(r.ac_charge)} a month` : 'No'}</InfoRow>
+          </Card>
+        ))}
+      </div>
+    )
   }
 
-  const inputCls = 'w-full px-4 py-3 rounded-md border border-border bg-bg text-text-primary focus:outline-none focus:border-accent transition-colors'
-
-  if (loading) return <div><HeaderSkeleton /><PanelSkeleton count={3} /></div>
-
   return (
-    <div className="max-w-3xl mx-auto">
-      <header className="mb-8">
-        <h1 className="text-3xl font-heading font-bold text-text-primary">Settings</h1>
-        <p className="text-text-secondary mt-1">Configure property-wide variables</p>
-      </header>
+    <div className="flex flex-col gap-3.5 max-w-2xl">
+      <PageTitle>Settings</PageTitle>
 
-      {role !== 'admin' && (
-        <div className="bg-warning/10 text-warning px-4 py-3 rounded-md mb-6 border border-warning/20">
-          You have view-only access to settings.
-        </div>
-      )}
-
-      {/* Global Settings */}
-      <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
-        <form onSubmit={handleSubmitSettings} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">
-              Electricity Rate (₹ per unit)
-            </label>
+      <Card className="p-4 flex flex-col gap-4">
+        <Field label="Electricity rate" hint="Changes bills made from now on, not ones already made.">
+          <span className="flex items-center gap-1.5 h-[52px] px-3 border border-border rounded-lg bg-bg focus-within:outline-2 focus-within:outline-text-primary focus-within:outline-offset-2">
+            <span className="text-text-secondary">₹</span>
             <input
-              type="number"
-              step="0.1"
-              name="electricity_rate_per_unit"
-              value={settings?.electricity_rate_per_unit ?? ''}
-              onChange={handleSettingsChange}
-              disabled={role !== 'admin'}
-              className={inputCls}
+              value={form.rate}
+              onChange={e => setForm(f => ({ ...f, rate: digits(e.target.value, true) }))}
+              inputMode="decimal"
+              className="flex-1 min-w-0 h-12 border-0 bg-transparent text-[17px] focus:outline-none"
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-primary mb-2">
-              Total Parking Spots
-            </label>
-            <input
-              type="number"
-              name="total_parking_spots"
-              value={settings?.total_parking_spots ?? ''}
-              onChange={handleSettingsChange}
-              disabled={role !== 'admin'}
-              className={inputCls}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={saving || role !== 'admin'}
-            className="w-full flex items-center justify-center gap-2 bg-accent text-surface px-4 py-3 rounded-md font-semibold hover:opacity-90 transition-opacity h-[44px] disabled:opacity-50"
-          >
-            <Save size={20} />
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
-        </form>
-      </div>
+            <span className="text-text-secondary">per unit</span>
+          </span>
+        </Field>
+        <Field label="Parking spots">
+          <input value={form.parking} onChange={e => setForm(f => ({ ...f, parking: digits(e.target.value) }))} inputMode="numeric" className={inputCls()} />
+        </Field>
+      </Card>
 
-      {/* Room Configurations */}
-      <div className="bg-surface border border-border rounded-xl p-6 shadow-sm mt-8 overflow-x-auto">
-        <h2 className="text-xl font-heading font-bold mb-4">Room Configurations</h2>
-        <table className="w-full text-left border-collapse min-w-[520px]">
-          <thead>
-            <tr className="bg-bg border-b border-border">
-              <th className="p-3 font-semibold text-text-primary text-sm">Room</th>
-              <th className="p-3 font-semibold text-text-primary text-sm">Capacity</th>
-              <th className="p-3 font-semibold text-text-primary text-sm">Base Rent (₹)</th>
-              <th className="p-3 font-semibold text-text-primary text-sm">AC Charge (₹)</th>
-              <th className="p-3 font-semibold text-text-primary text-sm">AC</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rooms.map(room => (
-              <tr key={room.id} className="border-b border-border">
-                <td className="p-3 font-medium">{room.room_number}</td>
-                <td className="p-3">
-                  <input type="number" value={roomEdits[room.id]?.capacity ?? ''} onChange={e => handleRoomEdit(room.id, 'capacity', e.target.value)} disabled={role !== 'admin'} className="w-16 p-1 border border-border rounded bg-bg text-center disabled:opacity-50" />
-                </td>
-                <td className="p-3">
-                  <input type="number" value={roomEdits[room.id]?.seat_rent ?? ''} onChange={e => handleRoomEdit(room.id, 'seat_rent', e.target.value)} disabled={role !== 'admin'} className="w-24 p-1 border border-border rounded bg-bg text-center disabled:opacity-50" />
-                </td>
-                <td className="p-3">
-                  <input type="number" value={roomEdits[room.id]?.ac_charge ?? ''} onChange={e => handleRoomEdit(room.id, 'ac_charge', e.target.value)} disabled={role !== 'admin'} className="w-24 p-1 border border-border rounded bg-bg text-center disabled:opacity-50" />
-                </td>
-                <td className="p-3">
-                  <input type="checkbox" checked={roomEdits[room.id]?.has_ac ?? false} onChange={e => handleRoomEdit(room.id, 'has_ac', e.target.checked)} disabled={role !== 'admin'} className="w-4 h-4 disabled:opacity-50" />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <button
-          onClick={handleSaveRooms}
-          disabled={savingRooms || role !== 'admin'}
-          className="mt-4 flex items-center gap-2 bg-accent text-surface px-4 py-2 rounded-md font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
-        >
-          <Save size={16} />
-          {savingRooms ? 'Saving...' : 'Save Room Changes'}
-        </button>
+      <h2 className="font-heading font-bold text-xl pt-2 px-1">Rooms</h2>
+      {rooms.map(([id, r]) => (
+        <Card key={id} className="p-4 flex flex-col gap-3.5">
+          <CardTitle className="text-[19px]">Room {r.room_number}</CardTitle>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Seats">
+              <input value={r.capacity} onChange={e => setRoom(id, 'capacity', digits(e.target.value))} inputMode="numeric" className={inputCls()} />
+            </Field>
+            <Field label="Rent per seat, ₹">
+              <input value={r.seat_rent} onChange={e => setRoom(id, 'seat_rent', digits(e.target.value))} inputMode="numeric" className={inputCls()} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <YesNo label="Has AC" value={r.has_ac} onChange={v => setRoom(id, 'has_ac', v)} />
+            {r.has_ac && (
+              <Field label="AC charge, ₹">
+                <input value={r.ac_charge} onChange={e => setRoom(id, 'ac_charge', digits(e.target.value))} inputMode="numeric" className={inputCls()} />
+              </Field>
+            )}
+          </div>
+        </Card>
+      ))}
+
+      {/* Stays at the bottom of the screen while scrolling. */}
+      <div className="sticky bottom-0 -mx-4 md:mx-0 md:rounded-[10px] md:border mt-2 px-4 pt-3.5 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:pb-3.5 bg-surface border-t border-border flex flex-col gap-1.5">
+        <Button variant="primary" onClick={save} disabled={saving || !changed}>
+          {saving ? 'Saving...' : 'Save changes'}
+        </Button>
+        {!changed && <p className="text-sm text-text-secondary text-center">Nothing changed yet.</p>}
       </div>
     </div>
   )
