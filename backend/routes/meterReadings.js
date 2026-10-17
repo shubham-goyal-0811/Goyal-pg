@@ -16,7 +16,11 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res) =
       .from('meter_readings')
       .select('*')
       .eq('room_id', req.params.id)
-      .order('reading_date', { ascending: false });
+      // Newest first, and by id within a day: a check-in or move-out often
+      // shares a date with another reading, and the page shows rows[0] as
+      // "the last reading".
+      .order('reading_date', { ascending: false })
+      .order('id', { ascending: false });
 
     if (error) throw error;
     res.json(readings);
