@@ -13,8 +13,12 @@ import { Card, CardTitle, Button, Field, YesNo, InfoRow, PageTitle, inputCls } f
  * miss. Gatekeepers see the same figures as plain text, with nothing to press.
  */
 
-const ROOM_FIELDS = ['capacity', 'seat_rent', 'ac_charge', 'has_ac']
+const ROOM_FIELDS = ['room_number', 'capacity', 'seat_rent', 'ac_charge', 'has_ac']
 const str = (v) => (v == null ? '' : String(Number(v)))
+
+// The app puts "Room " in front of the name everywhere, so "Room 101" typed in
+// full would show as "Room Room 101". The API strips it the same way.
+const roomName = (v) => v.trim().replace(/^room\s+/i, '')
 
 const Settings = () => {
   const { role } = useAuth()
@@ -56,7 +60,19 @@ const Settings = () => {
     .filter(id => ROOM_FIELDS.some(k => form.rooms[id][k] !== saved.rooms[id][k]))
   const changed = settingsChanged || changedRooms.length > 0
 
+  // Room names must be filled in and different from each other. Checked here so
+  // the clash shows on the box being typed in, not as an error after Save.
+  const nameError = (id) => {
+    const name = roomName(form.rooms[id].room_number)
+    if (!name) return 'Enter a name for this room.'
+    const clash = Object.keys(form.rooms).some(other =>
+      other !== id && roomName(form.rooms[other].room_number).toLowerCase() === name.toLowerCase())
+    return clash ? `Another room is already called ${name}.` : null
+  }
+  const namesOk = Object.keys(form.rooms).every(id => !nameError(id))
+
   const save = async () => {
+    if (!namesOk) return
     setSaving(true)
     try {
       await Promise.all([
@@ -67,6 +83,7 @@ const Settings = () => {
         ...changedRooms.map(id => {
           const r = form.rooms[id]
           return api.patch(`/rooms/${id}`, {
+            ...(r.room_number !== saved.rooms[id].room_number ? { room_number: roomName(r.room_number) } : {}),
             capacity: Number(r.capacity),
             seat_rent: Number(r.seat_rent),
             ac_charge: r.has_ac ? Number(r.ac_charge) : 0,
@@ -74,7 +91,14 @@ const Settings = () => {
           })
         }),
       ])
-      setSaved(form)
+      // Store names as saved, so "Room 101" typed in full doesn't read as an
+      // unsaved change afterwards.
+      const stored = {
+        ...form,
+        rooms: Object.fromEntries(Object.entries(form.rooms).map(([id, r]) => [id, { ...r, room_number: roomName(r.room_number) }])),
+      }
+      setSaved(stored)
+      setForm(stored)
       toast.success('Changes saved')
     } catch (err) {
       toast.error(err.message || "Couldn't save the changes")
@@ -135,7 +159,21 @@ const Settings = () => {
       <h2 className="font-heading font-bold text-xl pt-2 px-1">Rooms</h2>
       {rooms.map(([id, r]) => (
         <Card key={id} className="p-4 flex flex-col gap-3.5">
-          <CardTitle className="text-[19px]">Room {r.room_number}</CardTitle>
+          {/* Titled by the saved name, so it doesn't change under the admin while they type a new one. */}
+          <CardTitle className="text-[19px]">Room {saved.rooms[id].room_number}</CardTitle>
+          <Field
+            label="Room name"
+            error={nameError(id)}
+            hint={'Just the name, like 101. The app adds "Room" in front.'}
+          >
+            <input
+              value={r.room_number}
+              onChange={e => setRoom(id, 'room_number', e.target.value)}
+              maxLength={20}
+              autoComplete="off"
+              className={inputCls(Boolean(nameError(id)))}
+            />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Seats">
               <input value={r.capacity} onChange={e => setRoom(id, 'capacity', digits(e.target.value))} inputMode="numeric" className={inputCls()} />
@@ -157,10 +195,11 @@ const Settings = () => {
 
       {/* Stays at the bottom of the screen while scrolling. */}
       <div className="sticky bottom-0 -mx-4 md:mx-0 md:rounded-[10px] md:border mt-2 px-4 pt-3.5 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:pb-3.5 bg-surface border-t border-border flex flex-col gap-1.5">
-        <Button variant="primary" onClick={save} disabled={saving || !changed}>
+        <Button variant="primary" onClick={save} disabled={saving || !changed || !namesOk}>
           {saving ? 'Saving...' : 'Save changes'}
         </Button>
         {!changed && <p className="text-sm text-text-secondary text-center">Nothing changed yet.</p>}
+        {changed && !namesOk && <p className="text-sm text-text-secondary text-center">Fix the room names above to save.</p>}
       </div>
     </div>
   )
