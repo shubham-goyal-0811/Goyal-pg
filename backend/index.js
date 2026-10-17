@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const multer = require('multer');
 const cron = require('node-cron');
 const runReminderCron = require('./jobs/rentReminder');
+const runKeepAlive = require('./jobs/keepAlive');
 const supabase = require('./config/supabase');
 const { apiLimiter, healthLimiter } = require('./middleware/rateLimit');
 
@@ -136,6 +137,15 @@ cron.schedule('0 9 * * *', () => {
   runReminderCron();
 }, { timezone: env.CRON_TIMEZONE });
 
+// Ping ourselves every 10 minutes so the free host never hits its 15-minute
+// idle sleep — which also lets the 9am reminder above actually run. Does
+// nothing unless KEEP_ALIVE_URL resolves (see config/env.js).
+if (env.KEEP_ALIVE_URL) {
+  cron.schedule('*/10 * * * *', () => {
+    runKeepAlive();
+  });
+}
+
 app.listen(PORT, () => {
   // Echo the resolved config so a misconfigured deploy is obvious in the logs
   // rather than showing up later as a browser CORS error. No secrets here.
@@ -144,5 +154,6 @@ app.listen(PORT, () => {
   console.log(`  cors origins ${env.ALLOWED_ORIGINS.join(', ') || '(none)'}`);
   console.log(`  trust proxy  ${env.TRUST_PROXY}`);
   console.log(`  cron tz      ${env.CRON_TIMEZONE}`);
+  console.log(`  keep-alive   ${env.KEEP_ALIVE_URL ? `${env.KEEP_ALIVE_URL}/health/db every 10 min` : 'off (no public URL)'}`);
   console.log(`  vision ocr   ${env.GOOGLE_CLOUD_VISION_API_KEY ? 'configured' : 'not configured (fields blank)'}`);
 });

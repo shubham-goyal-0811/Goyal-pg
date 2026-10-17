@@ -84,6 +84,12 @@ const env = {
 
   CRON_TIMEZONE: process.env.CRON_TIMEZONE || 'Asia/Kolkata',
 
+  // This server's own public address, pinged by jobs/keepAlive.js so a
+  // free-tier host doesn't put it to sleep. Render sets RENDER_EXTERNAL_URL by
+  // itself; KEEP_ALIVE_URL overrides it elsewhere. Unset locally, so a dev
+  // machine never pings anything.
+  KEEP_ALIVE_URL: (process.env.KEEP_ALIVE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '') || null,
+
   // Optional: OCR degrades to empty fields without it (services/ocr.js).
   GOOGLE_CLOUD_VISION_API_KEY: process.env.GOOGLE_CLOUD_VISION_API_KEY || null,
 };
