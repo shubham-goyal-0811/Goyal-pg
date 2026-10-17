@@ -89,7 +89,9 @@ const OnboardingWizard = () => {
         }
       }))
 
-      toast.success('Document scanned! Review the extracted fields.')
+      // A failed read still moves on — the admin can type the fields by hand.
+      if (res.error) toast.error(`${res.error} You can type the details in by hand.`, { duration: 6000 })
+      else toast.success('Document scanned! Review the extracted fields.')
       handleNext()
     } catch (err) {
       toast.error('Upload or OCR failed: ' + err.message)
