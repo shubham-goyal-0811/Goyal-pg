@@ -23,25 +23,12 @@ const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { ADMIN_ONLY } = require('../config/roles');
 const { enquiryLimiter } = require('../middleware/rateLimit');
-const { validateId } = require('../middleware/validate');
+const { validateId, normalizePhone } = require('../middleware/validate');
 
 const LIMITS = { name: 80, phone: 20, email: 254, message: 1000 };
 const STATUSES = new Set(['new', 'contacted', 'closed']);
 
 const text = (raw) => (typeof raw === 'string' ? raw.trim() : '');
-
-/**
- * Indian mobile numbers, forgivingly. Accepts spaces, dashes, a +91 or 0
- * prefix. Stored as the bare 10 digits so the inbox can build tel: and
- * WhatsApp links without re-parsing.
- */
-const normalizePhone = (raw) => {
-  const digits = text(raw).replace(/\D/g, '');
-  if (digits.length === 10) return digits;
-  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
-  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
-  return null;
-};
 
 // ── Public ───────────────────────────────────────────────────────────────────
 
