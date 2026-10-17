@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import { dateLabel, todayISO } from '../lib/format'
 import toast from 'react-hot-toast'
 import { Loader2 } from 'lucide-react'
+import Skeleton from '../components/Skeleton'
 
 const MeterReading = () => {
   const { roomId } = useParams()
@@ -69,7 +70,13 @@ const MeterReading = () => {
       </header>
 
       <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
-        {!loadingPrev && (
+        {/* Hold the box's place while the last reading loads — it is the number
+            the admin checks before typing, so it must not pop in under them. */}
+        {loadingPrev ? (
+          <div className="mb-6 p-4 rounded-md bg-bg border border-border">
+            <Skeleton className="h-5 w-56" />
+          </div>
+        ) : (
           <div className="mb-6 p-4 rounded-md bg-bg border border-border">
             {previous ? (
               <p className="text-sm text-text-secondary">

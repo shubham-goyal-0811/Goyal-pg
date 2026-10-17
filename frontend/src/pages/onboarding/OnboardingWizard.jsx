@@ -4,6 +4,7 @@ import { api } from '../../lib/api'
 import { dateLabel, todayISO } from '../../lib/format'
 import toast from 'react-hot-toast'
 import { Loader2, UploadCloud, CheckCircle } from 'lucide-react'
+import Skeleton from '../../components/Skeleton'
 
 // Indian mobile: 10 digits starting 6-9. Matches normalizePhone on the API.
 const isMobile = (v) => /^[6-9]\d{9}$/.test(v)
@@ -24,9 +25,10 @@ const OnboardingWizard = () => {
   const [step, setStep] = useState(1)
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [rooms, setRooms] = useState([])
+  const [rooms, setRooms] = useState(null) // null until /rooms answers
 
   const [lastReading, setLastReading] = useState(null)
+  const [loadingReading, setLoadingReading] = useState(false)
 
   const [state, setState] = useState({
     roomId: searchParams.get('room') || '',
@@ -49,16 +51,18 @@ const OnboardingWizard = () => {
   useEffect(() => {
     api.get('/rooms')
       .then(res => setRooms(res))
-      .catch(() => toast.error('Failed to load rooms'))
+      .catch(() => { setRooms([]); toast.error('Failed to load rooms') })
   }, [])
 
   // Show the room's last meter reading so a typo is obvious before it becomes
   // the baseline every future bill is measured against.
   useEffect(() => {
     if (!state.roomId) { setLastReading(null); return }
+    setLoadingReading(true)
     api.get(`/rooms/${state.roomId}/meter-readings`)
       .then(rows => setLastReading(rows?.[0] ?? null))
       .catch(() => setLastReading(null))
+      .finally(() => setLoadingReading(false))
   }, [state.roomId])
 
   const handleNext = () => setStep(s => s + 1)
@@ -178,22 +182,26 @@ const OnboardingWizard = () => {
         {step === 1 && (
           <div className="space-y-4">
             <h2 className="text-xl font-heading font-bold">Select Room</h2>
-            <select
-              value={state.roomId}
-              onChange={e => setState({ ...state, roomId: e.target.value })}
-              className={inputCls}
-            >
-              <option value="">Choose a room...</option>
-              {rooms.map(room => {
-                const available = room.capacity - room.active_tenants_count
-                const isFull = available <= 0
-                return (
-                  <option key={room.id} value={room.id} disabled={isFull}>
-                    Room {room.room_number} — {isFull ? 'Full' : `${available} seat${available > 1 ? 's' : ''} open`}
-                  </option>
-                )
-              })}
-            </select>
+            {rooms === null ? (
+              <Skeleton className="h-[50px] w-full" />
+            ) : (
+              <select
+                value={state.roomId}
+                onChange={e => setState({ ...state, roomId: e.target.value })}
+                className={inputCls}
+              >
+                <option value="">Choose a room...</option>
+                {rooms.map(room => {
+                  const available = room.capacity - room.active_tenants_count
+                  const isFull = available <= 0
+                  return (
+                    <option key={room.id} value={room.id} disabled={isFull}>
+                      Room {room.room_number} — {isFull ? 'Full' : `${available} seat${available > 1 ? 's' : ''} open`}
+                    </option>
+                  )
+                })}
+              </select>
+            )}
             {state.roomId && (
               <div className="pt-2 space-y-2">
                 <label className="block text-sm font-medium text-text-primary">
@@ -207,7 +215,11 @@ const OnboardingWizard = () => {
                   value={state.meterReading}
                   onChange={e => setState({ ...state, meterReading: e.target.value })}
                 />
-                {lastReading ? (
+                {/* "No reading recorded" while it is still loading would tell
+                    the admin this reading becomes the baseline when it won't. */}
+                {loadingReading ? (
+                  <Skeleton className="h-4 w-48" />
+                ) : lastReading ? (
                   <p className="text-xs text-text-secondary">
                     Last recorded: <span className="font-semibold text-text-primary">{lastReading.reading_value}</span>
                     {' '}on {dateLabel(lastReading.reading_date)}
