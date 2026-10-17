@@ -5,6 +5,18 @@ import { dateLabel, todayISO } from '../../lib/format'
 import toast from 'react-hot-toast'
 import { Loader2, UploadCloud, CheckCircle } from 'lucide-react'
 
+// Indian mobile: 10 digits starting 6-9. Matches normalizePhone on the API.
+const isMobile = (v) => /^[6-9]\d{9}$/.test(v)
+
+// Keep the field to bare digits as they type or paste, dropping a +91 / 0
+// prefix, so what they see is exactly what gets saved.
+const toMobileDigits = (raw) => {
+  let d = raw.replace(/\D/g, '')
+  if (d.length > 10 && d.startsWith('91')) d = d.slice(2)
+  else if (d.length > 10 && d.startsWith('0')) d = d.slice(1)
+  return d.slice(0, 10)
+}
+
 const OnboardingWizard = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -136,6 +148,12 @@ const OnboardingWizard = () => {
     }
   }
 
+  // Explains why Next is disabled. No maxLength on the inputs: it would cut a
+  // pasted '+91 98765 43210' short before toMobileDigits could strip the prefix.
+  const { phone_number, parent_contact } = state.tenantDetails
+  const phoneInvalid = phone_number !== '' && !isMobile(phone_number)
+  const parentInvalid = parent_contact !== '' && !isMobile(parent_contact)
+
   const inputCls = 'w-full px-4 py-3 rounded-md border border-border bg-bg text-text-primary focus:outline-none focus:border-accent transition-colors'
   const btnPrimary = 'w-full bg-accent text-surface py-3 rounded-md font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2'
   const btnSecondary = 'w-full border border-border py-3 rounded-md font-semibold hover:bg-bg transition-colors'
@@ -223,20 +241,33 @@ const OnboardingWizard = () => {
               value={state.tenantDetails.full_name}
               onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, full_name: e.target.value } })}
             />
-            <input
-              placeholder="Phone Number *"
-              type="tel"
-              className={inputCls}
-              value={state.tenantDetails.phone_number}
-              onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, phone_number: e.target.value } })}
-            />
-            <input
-              placeholder="Parent's Contact Number"
-              type="tel"
-              className={inputCls}
-              value={state.tenantDetails.parent_contact}
-              onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, parent_contact: e.target.value } })}
-            />
+            <div>
+              <input
+                placeholder="Phone Number *"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel-national"
+                className={inputCls}
+                value={state.tenantDetails.phone_number}
+                onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, phone_number: toMobileDigits(e.target.value) } })}
+              />
+              {phoneInvalid && (
+                <p className="text-xs text-warning mt-1">Enter a 10-digit mobile number starting with 6, 7, 8 or 9.</p>
+              )}
+            </div>
+            <div>
+              <input
+                placeholder="Parent's Contact Number"
+                type="tel"
+                inputMode="numeric"
+                className={inputCls}
+                value={state.tenantDetails.parent_contact}
+                onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, parent_contact: toMobileDigits(e.target.value) } })}
+              />
+              {parentInvalid && (
+                <p className="text-xs text-warning mt-1">Enter a 10-digit mobile number, or leave it blank.</p>
+              )}
+            </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1">Move-in Date</label>
               <input
@@ -260,7 +291,7 @@ const OnboardingWizard = () => {
             )}
             <div className="flex gap-4 pt-2">
               <button onClick={handleBack} className={btnSecondary}>Back</button>
-              <button onClick={handleNext} disabled={!state.tenantDetails.full_name || !state.tenantDetails.phone_number} className={btnPrimary}>Next</button>
+              <button onClick={handleNext} disabled={!state.tenantDetails.full_name.trim() || !isMobile(state.tenantDetails.phone_number) || parentInvalid} className={btnPrimary}>Next</button>
             </div>
           </div>
         )}
