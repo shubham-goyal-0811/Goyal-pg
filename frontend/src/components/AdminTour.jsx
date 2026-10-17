@@ -23,22 +23,23 @@ const STEPS = [
   {
     title: 'Welcome to the office app',
     body: [
-      'Everything you need to run the PG is on six screens, listed down the left side.',
-      'This walkthrough takes about a minute. You can skip it — "Walkthrough" at the bottom of the sidebar brings it back any time.',
+      'Everything you need to run the PG is on six screens. On a phone, press "Menu" at the top to see them. On a computer they are down the left side.',
+      'This walkthrough takes about a minute. You can skip it — "Show me how it works" in the menu brings it back any time.',
     ],
   },
   {
-    title: 'Dashboard — rooms and seats',
+    title: 'Dashboard — who hasn\'t paid, then the rooms',
     body: [
-      'Every room shows its seats. A filled seat has the tenant\'s name; tap the name to open their record.',
-      'Tap an empty seat, or the button at the bottom of the card, to start onboarding someone into it.',
-      'The coloured tag next to each name is that tenant\'s rent for the month just billed — paid, pending, or no bill yet.',
+      'The top of the Dashboard lists everyone who hasn\'t paid their latest bill. Tap a name to open their page and mark it paid.',
+      'Below that, every room shows its seats. A filled seat has the tenant\'s name; tap the name to open their record.',
+      '"Add tenant" at the bottom of a room with a free seat starts adding someone to it.',
+      'The tag next to each name is that tenant\'s latest bill — Paid, Pending, or No bill.',
     ],
   },
   {
-    title: 'Generating the month\'s bills',
+    title: 'Making the month\'s bills',
     body: [
-      'The box at the top of the Dashboard creates rent bills for every active tenant for one month.',
+      'Once a month has ended, a box at the top of the Dashboard asks you to make its bills. The rest of the month, "Make bills" is a link at the bottom.',
       'Do it after that month has ended and its meter readings are recorded, or the electricity share will be missing.',
       'It is safe to press twice. Figures are recalculated, and any month already marked paid is left alone.',
     ],
@@ -47,15 +48,15 @@ const STEPS = [
     title: 'Tenants — the full record',
     body: [
       'Search by name or mobile number.',
-      'A tenant\'s page has their rent history, their ID proof, their uploaded documents, and the switch that gives them access to their own portal.',
-      'If the ID number was scanned wrong, correct it there — it is what goes on the police form.',
+      'A tenant\'s page opens on their latest bill, with a big "Mark paid" button. Their ID proof, documents and online access are under "More details".',
+      'If the ID number was read wrong from the photo, correct it there — it is what goes on the police form.',
     ],
   },
   {
-    title: 'Gate Log and Police Verification',
+    title: 'Gate log and Police verification',
     body: [
-      'Gate Log records who came in and when they left. Add an entry for a visitor, then mark them out on the way back.',
-      'Police Verification tracks where each tenant\'s paperwork has reached: pending, submitted, or verified.',
+      'Gate log records who came in and when they left. Press "Add visitor" when someone arrives, then "Mark out" when they leave.',
+      'Police verification tracks where each tenant\'s paperwork has reached. Tap Pending, Submitted or Verified to change it.',
     ],
   },
   {
@@ -69,7 +70,7 @@ const STEPS = [
     title: 'That is all of it',
     body: [
       'Nothing in this walkthrough changed any data.',
-      'To see it again, press "Walkthrough" at the bottom of the sidebar.',
+      'To see it again, press "Show me how it works" in the menu.',
     ],
   },
 ]
