@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { isAdmin } from '../lib/roles'
 import { api } from '../lib/api'
 import { useApiQuery, setApiData } from '../lib/queries'
-import { dateLabel, dayMonthLabel, monthName, rupees, todayISO } from '../lib/format'
+import { dateLabel, dayMonthLabel, monthName, rupees, seatRentLabel, todayISO } from '../lib/format'
 import toast from 'react-hot-toast'
 import { X, ExternalLink, Loader2, LogOut, ChevronDown } from 'lucide-react'
 import { TitleSkeleton, PanelSkeleton } from '../components/Skeleton'
@@ -89,10 +89,10 @@ const paidLabel = (date) => {
   return date === todayISO() ? `Paid today, ${dayMonthLabel(date)}` : `Paid on ${dayMonthLabel(date)}`
 }
 
-const BillCard = ({ bill, onMarkPaid, busy }) => {
+const BillCard = ({ bill, checkInDate, onMarkPaid, busy }) => {
   const paid = bill.status === 'paid'
   const rows = [
-    ['Seat rent', bill.seat_rent],
+    [seatRentLabel(bill.billing_month, checkInDate), bill.seat_rent],
     ...(Number(bill.ac_charge) > 0 ? [['AC', bill.ac_charge]] : []),
     ['Electricity', bill.electricity_charge],
   ]
@@ -578,7 +578,7 @@ const TenantDetail = () => {
         <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-[18px] lg:items-start">
           <div className="flex flex-col gap-4 lg:gap-[18px]">
             {latest ? (
-              <BillCard bill={latest} onMarkPaid={markPaid} busy={payingId === latest.id} />
+              <BillCard bill={latest} checkInDate={tenant.check_in_date} onMarkPaid={markPaid} busy={payingId === latest.id} />
             ) : (
               <Card className="px-4 py-[18px]">
                 <CardTitle>No bills yet</CardTitle>

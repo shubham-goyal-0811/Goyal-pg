@@ -105,6 +105,20 @@ export const relativeLabel = (value) => {
   return dateLabel(d)
 }
 
+/**
+ * Seat rent label for a bill, naming the days charged when the tenant moved in
+ * partway through its month: ('2026-09-01', '2026-09-16') → 'Seat rent, 15 of
+ * 30 days'. The cut itself is made by daysStayed in backend/services/rent.js.
+ */
+export const seatRentLabel = (billingMonth, checkInDate) => {
+  const month = String(billingMonth ?? '').slice(0, 7)
+  const checkIn = String(checkInDate ?? '').slice(0, 10)
+  if (!month || checkIn.slice(0, 7) !== month || checkIn.slice(8) === '01') return 'Seat rent'
+  const [y, m, d] = checkIn.split('-').map(Number)
+  const total = new Date(y, m, 0).getDate()
+  return `Seat rent, ${total - d + 1} of ${total} days`
+}
+
 /** Today as 'YYYY-MM-DD' in the user's own timezone — for <input type="date">. */
 export const todayISO = () => {
   const d = new Date()
