@@ -385,9 +385,12 @@ router.post('/:id/generate-rent', roleCheck(ADMIN_ONLY), validateId(), async (re
     const result = await generateRent([tenant], billing_month);
 
     if (result.generated === 0) {
-      const why = result.skipped[0]?.reason === 'already_paid'
+      const reason = result.skipped[0]?.reason;
+      const why = reason === 'already_paid'
         ? 'This month is already marked paid for this tenant.'
-        : 'Nothing to generate.';
+        : reason === 'not_moved_in'
+          ? 'This tenant moved in after that month ended.'
+          : 'Nothing to generate.';
       return res.status(409).json({ error: why, ...result });
     }
 
