@@ -29,6 +29,20 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text-primary);
   font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Keyboard focus has to be obvious — a thin accent ring vanished on the
+   off-white background. Dark, offset, and only for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--color-text-primary);
+  outline-offset: 2px;
 }
 
 h1, h2, h3, h4, h5, h6 {
