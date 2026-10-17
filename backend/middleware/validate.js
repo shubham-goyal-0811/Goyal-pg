@@ -60,6 +60,22 @@ const normalizeEmail = (raw) => {
 };
 
 /**
+ * Indian mobile numbers, forgivingly. Accepts spaces, dashes, a +91 or 0
+ * prefix. Stored as the bare 10 digits so the office app can build tel: and
+ * WhatsApp links without re-parsing. Returns null if it isn't one.
+ *
+ * Every Indian mobile starts with 6, 7, 8 or 9 — checking that catches a
+ * dropped or doubled digit that a length check alone lets through.
+ */
+const normalizePhone = (raw) => {
+  if (typeof raw !== 'string') return null;
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  return /^[6-9]\d{9}$/.test(digits) ? digits : null;
+};
+
+/**
  * ── ID proof ────────────────────────────────────────────────────────────────
  *
  * These numbers reach us two ways, and both of them produce garbage:
@@ -161,4 +177,4 @@ const normalizeIdProof = (rawType, rawNumber) => {
   return { ok: true, type, number: value };
 };
 
-module.exports = { validateId, sanitizeSearch, normalizeEmail, normalizeIdProof, ID_PROOF_TYPES };
+module.exports = { validateId, sanitizeSearch, normalizeEmail, normalizePhone, normalizeIdProof, ID_PROOF_TYPES };

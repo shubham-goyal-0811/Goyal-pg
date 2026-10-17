@@ -6,7 +6,7 @@ const roleCheck = require('../middleware/roleCheck');
 const { ROLES, ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { generateRent, isBillingMonth, TENANT_BILLING_SELECT } = require('../services/rent');
 const { rejectionIfBackwards } = require('../services/meterReadings');
-const { validateId, sanitizeSearch, normalizeEmail, normalizeIdProof } = require('../middleware/validate');
+const { validateId, sanitizeSearch, normalizeEmail, normalizePhone, normalizeIdProof } = require('../middleware/validate');
 
 const { invalidateRole } = roleCheck;
 
@@ -24,7 +24,14 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
 
     // ── Input validation ────────────────────────────────────────────────
     if (!full_name?.trim())    return res.status(400).json({ error: 'full_name is required' });
-    if (!phone_number?.trim()) return res.status(400).json({ error: 'phone_number is required' });
+    const phone = normalizePhone(phone_number);
+    if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number' });
+    // Optional, but if given it is who gets called at 2am — same rule applies.
+    let parentPhone = null;
+    if (parent_contact?.trim()) {
+      parentPhone = normalizePhone(parent_contact);
+      if (!parentPhone) return res.status(400).json({ error: "Enter a valid 10-digit mobile number for the parent's contact" });
+    }
     if (!room_id || isNaN(Number(room_id))) return res.status(400).json({ error: 'valid room_id is required' });
     if (!check_in_date)        return res.status(400).json({ error: 'check_in_date is required' });
     if (new Date(check_in_date) > new Date()) return res.status(400).json({ error: 'check_in_date cannot be in the future' });
@@ -82,8 +89,8 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
     const { data: tenant, error } = await supabase
       .from('tenants')
       .insert([{
-        room_id: Number(room_id), full_name: full_name.trim(), phone_number: phone_number.trim(),
-        parent_contact: parent_contact?.trim() || null, address,
+        room_id: Number(room_id), full_name: full_name.trim(), phone_number: phone,
+        parent_contact: parentPhone, address,
         id_proof_type: idProof.type, id_proof_number: idProof.number,
         ac_opted: Boolean(ac_opted), has_vehicle: Boolean(has_vehicle),
         vehicle_number: vehicle_number || null, check_in_date
@@ -178,6 +185,22 @@ router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
     const safeUpdates = {};
     for (const field of TENANT_EDITABLE_FIELDS) {
       if (req.body[field] !== undefined) safeUpdates[field] = req.body[field];
+    }
+
+    if (safeUpdates.phone_number !== undefined) {
+      const phone = normalizePhone(safeUpdates.phone_number);
+      if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number' });
+      safeUpdates.phone_number = phone;
+    }
+    if (safeUpdates.parent_contact !== undefined) {
+      // Clearing it is allowed; a half-typed number is not.
+      if (!String(safeUpdates.parent_contact ?? '').trim()) {
+        safeUpdates.parent_contact = null;
+      } else {
+        const phone = normalizePhone(safeUpdates.parent_contact);
+        if (!phone) return res.status(400).json({ error: "Enter a valid 10-digit mobile number for the parent's contact" });
+        safeUpdates.parent_contact = phone;
+      }
     }
 
     // ── ID proof ────────────────────────────────────────────────────────────
