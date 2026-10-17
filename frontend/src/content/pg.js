@@ -39,6 +39,11 @@ export const pg = {
     pincode: '151001',
   },
 
+  // Directions to the Google Maps listing itself. A plain address search can
+  // drop the pin on the wrong house; this one can't. Origin is left empty so
+  // Maps starts from the visitor's own location.
+  mapsUrl: 'https://www.google.com/maps/dir//Goyal+PG,+21170,+street+number+7,+Ajit+Rd,+BTI,+Bathinda,+Punjab+151001/data=!4m6!4m5!1m1!4e2!1m2!1m1!1s0x391732a4154d1d33:0xbe03be4a58088605',
+
   // ← EDIT — bare 10 digits, no +91. Used for tel: and WhatsApp links.
   phone: '9999999999',
   // Set to null to hide the WhatsApp button entirely.
