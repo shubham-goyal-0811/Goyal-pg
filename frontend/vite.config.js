@@ -32,7 +32,7 @@ export default defineConfig(({ command, mode }) => {
         registerType: 'autoUpdate',
         injectRegister: 'auto',
         devOptions: {
-          enabled: true
+          enabled: false
         },
         manifest: {
           name: 'Goyal PG',
