@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ShieldOff, LogOut } from 'lucide-react'
 
@@ -26,8 +27,8 @@ const AccessDenied = () => {
 
         <p className="text-text-secondary leading-relaxed mb-6">
           You're signed in{user?.email ? <> as <span className="font-medium text-text-primary">{user.email}</span></> : null},
-          but this account hasn't been granted access to the PG admin app.
-          Ask the owner to enable it for you.
+          but this account hasn't been given access yet. If you live here, ask the office to
+          add this exact email address to your record.
         </p>
 
         <button
@@ -41,6 +42,10 @@ const AccessDenied = () => {
         <p className="text-xs text-text-secondary mt-4">
           Signed in with the wrong account? Sign out and try another.
         </p>
+
+        <Link to="/" className="inline-block mt-4 text-sm text-text-secondary hover:text-text-primary">
+          ← Back to Goyal PG
+        </Link>
       </div>
     </div>
   )

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api } from '../lib/api'
+import { useApiQuery } from '../lib/queries'
 import { useAuth } from '../context/AuthContext'
 import RoomCard from '../components/RoomCard'
+import { HeaderSkeleton, CardGridSkeleton } from '../components/Skeleton'
 import toast from 'react-hot-toast'
 import { Loader2, Receipt, AlertTriangle } from 'lucide-react'
 
@@ -13,7 +15,7 @@ const lastMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-const GenerateBills = ({ onDone }) => {
+const GenerateBills = () => {
   const [month, setMonth] = useState(lastMonth)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState(null)
@@ -26,7 +28,8 @@ const GenerateBills = ({ onDone }) => {
       setResult(res)
       if (res.generated > 0) toast.success(`Generated ${res.generated} bill${res.generated === 1 ? '' : 's'}`)
       else toast('Nothing to generate for this month')
-      onDone?.()
+      // No refetch call needed: POST /rent busts '/rooms' in api.js, which
+      // refetches the room grid below while it is on screen.
     } catch (err) {
       toast.error(err.message || 'Failed to generate bills')
     } finally {
@@ -103,28 +106,35 @@ const GenerateBills = ({ onDone }) => {
 
 const Dashboard = () => {
   const { role } = useAuth()
-  const [rooms, setRooms] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { data: rooms, isPending, isError, error, refetch, isFetching } = useApiQuery('/rooms')
 
-  useEffect(() => {
-    fetchRooms()
-  }, [])
-
-  const fetchRooms = async () => {
-    try {
-      const res = await api.get('/rooms')
-      setRooms(res)
-    } catch (err) {
-      toast.error('Failed to load rooms')
-    } finally {
-      setLoading(false)
-    }
+  // Room cards in the same grid the real ones land in, so the page doesn't
+  // reflow when they arrive. Only ever shown on a true first load — once rooms
+  // are cached, coming back here paints them immediately and refreshes behind.
+  if (isPending) {
+    return (
+      <div>
+        <HeaderSkeleton />
+        <CardGridSkeleton count={6} lines={3} />
+      </div>
+    )
   }
 
-  if (loading) {
+  // Nothing cached and the request failed even after retries. A failed
+  // background refresh also sets isError but keeps `rooms` — that case falls
+  // through and the cached grid stays up.
+  if (isError && !rooms) {
     return (
-      <div className="flex h-64 items-center justify-center text-text-secondary">
-        Loading dashboard...
+      <div className="text-center py-16">
+        <p className="text-text-primary font-medium">Couldn't load rooms</p>
+        <p className="text-text-secondary text-sm mt-1">{error.message}</p>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="mt-4 text-accent font-semibold text-sm px-4 py-2 bg-accent/10 rounded-md hover:underline disabled:opacity-50"
+        >
+          {isFetching ? 'Retrying...' : 'Try again'}
+        </button>
       </div>
     )
   }
@@ -137,10 +147,10 @@ const Dashboard = () => {
       </header>
 
       {/* Rent generation is admin-only, matching POST /rent/generate. */}
-      {role === 'admin' && <GenerateBills onDone={fetchRooms} />}
+      {role === 'admin' && <GenerateBills />}
 
       {rooms.length === 0 ? (
-        <p className="text-text-secondary text-center py-16">No rooms found. Check your backend connection.</p>
+        <p className="text-text-secondary text-center py-16">No rooms found.</p>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {rooms.map(room => (

@@ -69,6 +69,7 @@ app.use(apiLimiter);
 app.use(express.json({ limit: '100kb' }));
 
 // Import routers
+const meRouter = require('./routes/me');
 const roomsRouter = require('./routes/rooms');
 const tenantsRouter = require('./routes/tenants');
 const documentsRouter = require('./routes/documents');
@@ -77,8 +78,13 @@ const policeVerificationRouter = require('./routes/policeVerification');
 const gateLogRouter = require('./routes/gateLog');
 const settingsRouter = require('./routes/settings');
 const documentsOcrRouter = require('./routes/documentsOcr');
+const enquiriesRouter = require('./routes/enquiries');
+const publicRouter = require('./routes/public');
 
 // Mount routers
+// /me first: it's what resolves a caller's role, so every other router's
+// roleCheck depends on it having run at least once for that account.
+app.use('/me', meRouter);
 app.use('/rooms', roomsRouter);
 app.use('/tenants', tenantsRouter);
 app.use('/tenants/:id/documents', documentsRouter);
@@ -88,6 +94,13 @@ app.use('/police-verification', policeVerificationRouter);
 app.use('/gate-log', gateLogRouter);
 app.use('/settings', settingsRouter);
 app.use('/documents', documentsOcrRouter);
+// Mixed: POST is public (landing page form), GET/PATCH are admin-only. The
+// router applies authMiddleware per-route rather than with router.use(), which
+// is why this one looks different from every other mount here.
+app.use('/enquiries', enquiriesRouter);
+// No auth at all — read-only data for the landing page (room prices). Still
+// behind apiLimiter above, keyed by IP since there is no user.
+app.use('/public', publicRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

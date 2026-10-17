@@ -22,7 +22,7 @@ const MeterModal = ({ roomId, isOpen, onClose }) => {
         
         <div className="flex flex-col gap-3">
           <button 
-            onClick={() => navigate(`/meter-reading/${roomId}`)}
+            onClick={() => navigate(`/admin/meter-reading/${roomId}`)}
             className="w-full bg-accent text-surface px-4 py-3 rounded-md font-semibold hover:opacity-90 transition-opacity"
           >
             Record Now (Recommended)

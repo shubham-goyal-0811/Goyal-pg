@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { HeaderSkeleton, TableSkeleton } from '../components/Skeleton'
 import toast from 'react-hot-toast'
 
 const PoliceVerification = () => {
@@ -25,7 +26,7 @@ const PoliceVerification = () => {
     }
   }
 
-  if (loading) return <div className="flex h-64 items-center justify-center text-text-secondary">Loading...</div>
+  if (loading) return <div><HeaderSkeleton /><TableSkeleton rows={6} cols={4} /></div>
 
   return (
     <div>

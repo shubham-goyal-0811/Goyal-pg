@@ -60,4 +60,22 @@ const healthLimiter = rateLimit({
   handler: tooMany('Too many health checks.'),
 });
 
-module.exports = { apiLimiter, uploadLimiter, healthLimiter };
+/**
+ * The public enquiry form — the only route in this app an unauthenticated
+ * stranger can cause a database write from.
+ *
+ * Keyed on IP alone, because by definition there is no req.user here. The
+ * window is an HOUR rather than the 15 minutes used above: the point isn't to
+ * smooth out bursts, it's that the owner's inbox is read by two people on a
+ * phone, so even slow, steady spam is expensive to them.
+ */
+const enquiryLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: env.RATE_LIMIT_ENQUIRY_MAX,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  handler: tooMany("You've sent a few messages already. Please call us instead — we'll pick up."),
+});
+
+module.exports = { apiLimiter, uploadLimiter, healthLimiter, enquiryLimiter };

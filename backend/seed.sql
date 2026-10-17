@@ -6,8 +6,9 @@ CREATE TABLE settings (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 'staff' and 'tenant' are legacy/reserved and grant nothing.
--- Live vocabulary: admin (full access), gatekeeper (desk work), viewer (none).
+-- 'staff' is legacy/reserved and grants nothing.
+-- Live vocabulary: admin (full access), gatekeeper (desk work),
+-- tenant (own record only, via /me), viewer (none).
 -- Keep this in sync with backend/config/roles.js.
 CREATE TYPE user_role AS ENUM ('admin', 'staff', 'tenant', 'gatekeeper', 'viewer');
 CREATE TABLE users (
@@ -50,9 +51,21 @@ CREATE TABLE tenants (
   status tenant_status NOT NULL DEFAULT 'active',
   security_deposit_amount decimal,
   parent_contact text,
+  -- Portal access. login_email is typed in by an admin; user_id is filled in by
+  -- routes/me.js the first time that person signs in. See 004_tenant_portal.sql.
+  login_email text,
+  user_id uuid REFERENCES users(id) ON DELETE SET NULL,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
 );
+
+-- One auth account = at most one tenant row.
+CREATE UNIQUE INDEX tenants_user_id_key ON tenants (user_id) WHERE user_id IS NOT NULL;
+-- Two ACTIVE tenants must never share an email — the linker can't disambiguate.
+-- Vacated rows are exempt so a returning resident can be re-onboarded.
+CREATE UNIQUE INDEX tenants_login_email_active_key
+  ON tenants (lower(login_email)) WHERE status = 'active' AND login_email IS NOT NULL;
+CREATE INDEX tenants_user_id_idx ON tenants (user_id);
 
 CREATE TYPE doc_type_enum AS ENUM ('id_proof_front', 'id_proof_back', 'photo', 'other');
 CREATE TABLE tenant_documents (
@@ -116,6 +129,20 @@ CREATE TABLE police_verification (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
 );
+
+-- Enquiries from the public landing page. The only table a stranger can cause
+-- a write to, so it references nothing else.
+CREATE TYPE enquiry_status AS ENUM ('new', 'contacted', 'closed');
+CREATE TABLE enquiries (
+  id serial PRIMARY KEY,
+  name text NOT NULL,
+  phone text NOT NULL,
+  email text,
+  message text,
+  status enquiry_status NOT NULL DEFAULT 'new',
+  created_at timestamp with time zone DEFAULT now()
+);
+CREATE INDEX enquiries_status_created_idx ON enquiries (status, created_at DESC);
 
 -- Seed initial settings
 INSERT INTO settings (electricity_rate_per_unit, total_parking_spots) VALUES (8.0, 10);
@@ -182,6 +209,7 @@ ALTER TABLE public.meter_readings      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gate_log            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.police_verification ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enquiries           ENABLE ROW LEVEL SECURITY;
 
 -- Only policy in the system. No INSERT/UPDATE/DELETE policy on users exists,
 -- so a signed-in user cannot promote themselves. Every other table has RLS on

@@ -1,5 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Plus, ExternalLink } from 'lucide-react'
+import { monthLabel } from '../lib/format'
+import { prefetchApi } from '../lib/queries'
 
 const RoomCard = ({ room }) => {
   const navigate = useNavigate()
@@ -9,7 +11,7 @@ const RoomCard = ({ room }) => {
   
   const handleOnboard = (e) => {
     e.stopPropagation()
-    navigate(`/onboarding?room=${room.id}`)
+    navigate(`/admin/onboarding?room=${room.id}`)
   }
 
   // Create array of slots based on capacity
@@ -42,7 +44,10 @@ const RoomCard = ({ room }) => {
             {tenant ? (
               <>
                 <button
-                  onClick={(e) => { e.stopPropagation(); navigate(`/tenants/${tenant.id}`) }}
+                  onClick={(e) => { e.stopPropagation(); navigate(`/admin/tenants/${tenant.id}`) }}
+                  // Same as the Tenants list: load the record as the pointer arrives.
+                  onPointerEnter={() => prefetchApi(`/tenants/${tenant.id}`)}
+                  onFocus={() => prefetchApi(`/tenants/${tenant.id}`)}
                   className="font-medium truncate pr-2 text-left hover:text-accent transition-colors flex items-center gap-1 group"
                 >
                   {tenant.full_name}
@@ -50,7 +55,7 @@ const RoomCard = ({ room }) => {
                 </button>
                 <span
                   title={tenant.rent_month
-                    ? `${new Date(tenant.rent_month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} bill`
+                    ? `${monthLabel(tenant.rent_month)} bill`
                     : 'No bill generated yet'}
                   className={`
                     text-xs font-semibold px-2 py-1 rounded whitespace-nowrap

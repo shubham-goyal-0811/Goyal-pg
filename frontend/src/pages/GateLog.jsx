@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { api } from '../lib/api'
+import { relativeLabel } from '../lib/format'
 import toast from 'react-hot-toast'
 import { Plus, X } from 'lucide-react'
+import { HeaderSkeleton, TableSkeleton } from '../components/Skeleton'
 
 const GateLog = () => {
   const [logs, setLogs] = useState([])
@@ -56,7 +58,7 @@ const GateLog = () => {
     }
   }
 
-  if (loading) return <div className="flex h-64 items-center justify-center text-text-secondary">Loading...</div>
+  if (loading) return <div><HeaderSkeleton /><TableSkeleton rows={6} cols={4} /></div>
 
   return (
     <div>
@@ -130,10 +132,10 @@ const GateLog = () => {
                 <tr key={log.id} className="border-b border-border hover:bg-bg/50 transition-colors">
                   <td className="p-4 font-medium">{log.visitor_name || 'Tenant Entry'}</td>
                   <td className="p-4">{log.tenants?.full_name || '—'} {log.tenants?.rooms?.room_number ? `(Rm ${log.tenants.rooms.room_number})` : ''}</td>
-                  <td className="p-4">{new Date(log.in_time).toLocaleString()}</td>
+                  <td className="p-4">{relativeLabel(log.in_time)}</td>
                   <td className="p-4">
                     {log.out_time
-                      ? new Date(log.out_time).toLocaleString()
+                      ? relativeLabel(log.out_time)
                       : <button onClick={() => handleMarkOut(log.id)} className="text-accent text-sm font-semibold hover:underline">Mark Out</button>
                     }
                   </td>

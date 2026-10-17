@@ -1,40 +1,49 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../lib/api'
-import toast from 'react-hot-toast'
+import { keepPreviousData } from '@tanstack/react-query'
+import { useApiQuery, prefetchApi } from '../lib/queries'
 import { Search, User, Phone, Home } from 'lucide-react'
+import { HeaderSkeleton, CardGridSkeleton } from '../components/Skeleton'
 
 const Tenants = () => {
   const navigate = useNavigate()
-  const [tenants, setTenants] = useState([])
-  const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
-  const [searching, setSearching] = useState(false)
+  // The term actually sent to the API. Trails `query` by 400ms while typing.
+  const [term, setTerm] = useState('')
 
-  // Single effect for both the initial load and search. Previously a separate
-  // mount effect fired /tenants at the same time this one did with an empty
-  // query — two identical requests on every visit to the page.
+  // The unfiltered list is cached, so clearing the box shouldn't wait 400ms.
+  // Only real search terms need debouncing.
   useEffect(() => {
     const q = query.trim()
-
-    const run = () => {
-      setSearching(true)
-      api.get(q ? `/tenants?search=${encodeURIComponent(q)}` : '/tenants')
-        .then(res => setTenants(res))
-        .catch(() => toast.error(q ? 'Search failed' : 'Failed to load tenants'))
-        .finally(() => { setSearching(false); setLoading(false) })
-    }
-
-    // The unfiltered list is cached client-side, so clearing the box shouldn't
-    // wait 400ms. Only real search terms need debouncing.
-    if (!q) { run(); return }
-
-    const timer = setTimeout(run, 400)
+    if (!q) { setTerm(''); return }
+    const timer = setTimeout(() => setTerm(q), 400)
     return () => clearTimeout(timer)
   }, [query])
 
-  if (loading) {
-    return <div className="flex h-64 items-center justify-center text-text-secondary">Loading tenants...</div>
+  const { data, isPending, isError, error, isFetching } = useApiQuery(
+    term ? `/tenants?search=${encodeURIComponent(term)}` : '/tenants',
+    // Keep the last results on screen while the next search is in flight,
+    // rather than blanking the grid on every keystroke.
+    { placeholderData: keepPreviousData },
+  )
+  const tenants = data ?? []
+  // Typing ahead of the debounce counts as searching too, so the hint appears
+  // on the first keystroke rather than 400ms later.
+  const searching = query.trim() !== term || (isFetching && !!term)
+
+  // Opening a tenant is the next thing anyone does here. Start loading their
+  // record the moment a pointer lands on the card — hover with a mouse, the
+  // touch itself on a phone — so it is usually there before the tap completes.
+  const warm = (id) => prefetchApi(`/tenants/${id}`)
+
+  if (isPending) {
+    return (
+      <div>
+        <HeaderSkeleton />
+        <div className="h-[50px] bg-border/60 rounded-xl animate-pulse mb-6" aria-hidden="true" />
+        <CardGridSkeleton count={6} lines={2} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" />
+      </div>
+    )
   }
 
   return (
@@ -61,6 +70,12 @@ const Tenants = () => {
         )}
       </div>
 
+      {isError && (
+        <p className="text-sm text-warning mb-4">
+          {term ? 'Search failed' : "Couldn't load tenants"}: {error.message}
+        </p>
+      )}
+
       {/* Results count */}
       <p className="text-sm text-text-secondary mb-4">
         {tenants.length} {query ? 'result(s) for' : 'active'} tenant{tenants.length !== 1 ? 's' : ''}
@@ -78,7 +93,9 @@ const Tenants = () => {
           {tenants.map(tenant => (
             <button
               key={tenant.id}
-              onClick={() => navigate(`/tenants/${tenant.id}`)}
+              onClick={() => navigate(`/admin/tenants/${tenant.id}`)}
+              onPointerEnter={() => warm(tenant.id)}
+              onFocus={() => warm(tenant.id)}
               className="bg-surface border border-border rounded-xl p-5 text-left hover:border-accent hover:shadow-md transition-all group"
             >
               <div className="flex items-start justify-between mb-3">

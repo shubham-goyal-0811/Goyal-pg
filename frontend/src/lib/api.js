@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { API_BASE_URL } from './env'
+import { queryClient } from './queryClient'
 
 const API_BASE = API_BASE_URL
 
@@ -52,9 +53,13 @@ const TTL_RULES = [
   { match: '/tenants',  ttl: 30 * 1000 },        // 30 s
   { match: '/gate-log', ttl: 30 * 1000 },        // 30 s
   { match: '/police-verification', ttl: 30 * 1000 },
+  { match: '/enquiries', ttl: 30 * 1000 },
+  // The resident portal. Short, because a bill being marked paid in the office
+  // should show up on the tenant's phone on their next tap, not five minutes on.
+  { match: '/me', ttl: 30 * 1000 },
 ]
 
-const getTTL = (endpoint) => {
+export const getTTL = (endpoint) => {
   // Never cache search queries
   if (endpoint.includes('?search=')) return 0
   // Never cache signed URL requests (they expire themselves)
@@ -80,6 +85,12 @@ const cacheBust = (...prefixes) => {
   for (const key of _cache.keys()) {
     if (prefixes.some(p => key.startsWith(p))) _cache.delete(key)
   }
+  // Pages on React Query keep their own cache, keyed by endpoint (lib/queries.js).
+  // Mark those stale too — and unlike deleting from the Map above, this refetches
+  // any that are on screen right now, so the page updates without a reload.
+  queryClient.invalidateQueries({
+    predicate: (q) => typeof q.queryKey[0] === 'string' && prefixes.some(p => q.queryKey[0].startsWith(p)),
+  })
 }
 
 // Derive which caches a mutating call should invalidate
@@ -89,6 +100,7 @@ const bustRelated = (endpoint) => {
   if (endpoint.startsWith('/tenants'))             cacheBust('/tenants', '/police-verification', '/rooms')
   if (endpoint.startsWith('/gate-log'))            cacheBust('/gate-log')
   if (endpoint.startsWith('/police-verification')) cacheBust('/police-verification')
+  if (endpoint.startsWith('/enquiries'))           cacheBust('/enquiries')
   // Generating bills and marking rent paid both change the rent status the
   // dashboard renders per room, which is served by the 5-minute /rooms cache.
   if (endpoint.startsWith('/rent'))                cacheBust('/rooms', '/tenants')
@@ -121,11 +133,13 @@ const getHeaders = async () => {
 
 // ── API Client ───────────────────────────────────────────────────────────────
 export const api = {
-  get: async (endpoint) => {
+  // { fresh: true } skips the cache read (the response is still stored). React
+  // Query passes it, since it keeps its own cache and only calls this to refresh.
+  get: async (endpoint, { fresh = false } = {}) => {
     const ttl = getTTL(endpoint)
 
     // Cache hit
-    if (ttl > 0) {
+    if (ttl > 0 && !fresh) {
       const cached = cacheGet(endpoint)
       if (cached !== null) return cached
     }
@@ -187,5 +201,13 @@ export const api = {
   },
 
   // Manual cache invalidation — call this after bulk mutations if needed
-  invalidate: (...prefixes) => cacheBust(...prefixes)
+  invalidate: (...prefixes) => cacheBust(...prefixes),
+
+  // Drop every cached response, in both caches, WITHOUT refetching. For sign-out:
+  // invalidating would refetch the screens still mounted, as nobody, and the
+  // next person on this phone must not see the last one's data.
+  reset: () => {
+    _cache.clear()
+    queryClient.clear()
+  },
 }
