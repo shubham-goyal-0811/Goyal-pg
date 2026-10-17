@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../../lib/api'
+import { dateLabel, todayISO } from '../../lib/format'
 import toast from 'react-hot-toast'
 import { Loader2, UploadCloud, CheckCircle } from 'lucide-react'
 
@@ -22,13 +23,14 @@ const OnboardingWizard = () => {
       full_name: '',
       phone_number: '',
       parent_contact: '',
-      check_in_date: new Date().toISOString().substring(0, 10),
+      check_in_date: todayISO(),
       ac_opted: false,
       has_vehicle: false,
       vehicle_number: ''
     },
     documentFile: null,
     uploadedDocId: null,
+    idProofType: 'aadhaar',
     ocrFields: { name: '', address: '', id_number: '', dob: '' }
   })
 
@@ -93,7 +95,7 @@ const OnboardingWizard = () => {
 
     if (readingGoesBackwards && !window.confirm(
       `The meter reading (${state.meterReading}) is lower than this room's last reading ` +
-      `(${lastReading.reading_value} on ${lastReading.reading_date}).\n\n` +
+      `(${lastReading.reading_value} on ${dateLabel(lastReading.reading_date)}).\n\n` +
       `That period will be skipped when bills are generated. Only continue if the meter ` +
       `was actually reset or replaced.\n\nOnboard anyway?`
     )) return
@@ -114,7 +116,7 @@ const OnboardingWizard = () => {
         has_vehicle: state.tenantDetails.has_vehicle,
         vehicle_number: state.tenantDetails.vehicle_number,
         address: state.ocrFields.address,
-        id_proof_type: 'aadhaar',
+        id_proof_type: state.idProofType,
         id_proof_number: state.ocrFields.id_number,
       })
 
@@ -188,7 +190,7 @@ const OnboardingWizard = () => {
                 {lastReading ? (
                   <p className="text-xs text-text-secondary">
                     Last recorded: <span className="font-semibold text-text-primary">{lastReading.reading_value}</span>
-                    {' '}on {new Date(lastReading.reading_date).toLocaleDateString('en-IN')}
+                    {' '}on {dateLabel(lastReading.reading_date)}
                   </p>
                 ) : (
                   <p className="text-xs text-text-secondary">
@@ -239,7 +241,7 @@ const OnboardingWizard = () => {
               <label className="block text-sm font-medium text-text-primary mb-1">Move-in Date</label>
               <input
                 type="date"
-                max={new Date().toISOString().substring(0, 10)}
+                max={todayISO()}
                 className={inputCls}
                 value={state.tenantDetails.check_in_date}
                 onChange={e => setState({ ...state, tenantDetails: { ...state.tenantDetails, check_in_date: e.target.value } })}
@@ -313,9 +315,32 @@ const OnboardingWizard = () => {
               <label className="block text-sm font-medium text-text-primary mb-1">Address</label>
               <input className={inputCls} value={state.ocrFields.address} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, address: e.target.value } })} />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">Aadhaar / ID Number</label>
-              <input className={inputCls} value={state.ocrFields.id_number} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, id_number: e.target.value } })} />
+            <div className="grid sm:grid-cols-[10rem_1fr] gap-4">
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">Document type</label>
+                <select
+                  className={inputCls}
+                  value={state.idProofType}
+                  onChange={e => setState({ ...state, idProofType: e.target.value })}
+                >
+                  <option value="aadhaar">Aadhaar</option>
+                  <option value="pan">PAN</option>
+                  <option value="passport">Passport</option>
+                  <option value="driving_license">Driving Licence</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">ID Number</label>
+                <input className={inputCls} value={state.ocrFields.id_number} onChange={e => setState({ ...state, ocrFields: { ...state.ocrFields, id_number: e.target.value } })} />
+                {/* OCR misreads digits on creased cards, and the API rejects an
+                    Aadhaar that fails its checksum. Say so here rather than
+                    letting the admin find out at the last click. */}
+                <p className="text-xs text-text-secondary mt-1">
+                  {state.ocrFields.id_number.trim()
+                    ? 'Check every digit against the card — a wrong one is rejected on save.'
+                    : 'Leave blank if the scan is unreadable. You can add it later from the tenant page.'}
+                </p>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-text-primary mb-1">Date of Birth</label>

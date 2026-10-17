@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { api } from '../../lib/api'
 import { rupees, monthLabel, dateLabel } from '../../lib/format'
+import { PanelSkeleton } from '../../components/Skeleton'
 
 /**
  * Month-by-month rent history.
@@ -79,7 +80,7 @@ const TenantRent = () => {
     )
   }
 
-  if (!bills) return <p className="text-text-secondary">Loading…</p>
+  if (!bills) return <PanelSkeleton count={4} />
 
   return (
     <div>

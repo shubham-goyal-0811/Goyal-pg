@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { Plus, ExternalLink } from 'lucide-react'
+import { monthLabel } from '../lib/format'
 
 const RoomCard = ({ room }) => {
   const navigate = useNavigate()
@@ -50,7 +51,7 @@ const RoomCard = ({ room }) => {
                 </button>
                 <span
                   title={tenant.rent_month
-                    ? `${new Date(tenant.rent_month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} bill`
+                    ? `${monthLabel(tenant.rent_month)} bill`
                     : 'No bill generated yet'}
                   className={`
                     text-xs font-semibold px-2 py-1 rounded whitespace-nowrap

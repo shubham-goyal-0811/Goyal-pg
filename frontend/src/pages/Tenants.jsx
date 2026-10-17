@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 import { Search, User, Phone, Home } from 'lucide-react'
+import { HeaderSkeleton, CardGridSkeleton } from '../components/Skeleton'
 
 const Tenants = () => {
   const navigate = useNavigate()
@@ -34,7 +35,13 @@ const Tenants = () => {
   }, [query])
 
   if (loading) {
-    return <div className="flex h-64 items-center justify-center text-text-secondary">Loading tenants...</div>
+    return (
+      <div>
+        <HeaderSkeleton />
+        <div className="h-[50px] bg-border/60 rounded-xl animate-pulse mb-6" aria-hidden="true" />
+        <CardGridSkeleton count={6} lines={2} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" />
+      </div>
+    )
   }
 
   return (

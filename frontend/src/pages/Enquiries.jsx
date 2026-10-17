@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { Phone, MessageCircle, Inbox } from 'lucide-react'
 import { api } from '../lib/api'
+import { relativeLabel } from '../lib/format'
+import { PanelSkeleton } from '../components/Skeleton'
 import { formatPhone } from '../content/pg'
 
 /**
@@ -25,15 +27,6 @@ const STATUS_STYLES = {
   closed: 'bg-success/10 text-success',
 }
 
-const when = (iso) => {
-  const d = new Date(iso)
-  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
-  if (days === 0) return `Today, ${d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
-  if (days === 1) return 'Yesterday'
-  if (days < 7) return `${days} days ago`
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
 const EnquiryCard = ({ enquiry, onStatus }) => {
   const [busy, setBusy] = useState(false)
 
@@ -54,7 +47,7 @@ const EnquiryCard = ({ enquiry, onStatus }) => {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-heading font-bold text-text-primary">{enquiry.name}</p>
-          <p className="text-sm text-text-secondary mt-0.5">{when(enquiry.created_at)}</p>
+          <p className="text-sm text-text-secondary mt-0.5">{relativeLabel(enquiry.created_at)}</p>
         </div>
         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_STYLES[enquiry.status]}`}>
           {enquiry.status}
@@ -167,7 +160,7 @@ const Enquiries = () => {
       </div>
 
       {loading ? (
-        <p className="text-text-secondary">Loading…</p>
+        <PanelSkeleton count={4} />
       ) : shown.length === 0 ? (
         <div className="bg-surface border border-border rounded-xl p-10 text-center">
           <Inbox size={32} className="mx-auto text-text-secondary mb-3" />

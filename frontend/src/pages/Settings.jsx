@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 import { Save } from 'lucide-react'
+import { HeaderSkeleton, PanelSkeleton } from '../components/Skeleton'
 
 const Settings = () => {
   const { role } = useAuth()
@@ -82,7 +83,7 @@ const Settings = () => {
 
   const inputCls = 'w-full px-4 py-3 rounded-md border border-border bg-bg text-text-primary focus:outline-none focus:border-accent transition-colors'
 
-  if (loading) return <div className="flex h-64 items-center justify-center text-text-secondary">Loading...</div>
+  if (loading) return <div><HeaderSkeleton /><PanelSkeleton count={3} /></div>
 
   return (
     <div className="max-w-3xl mx-auto">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { dateLabel, todayISO } from '../lib/format'
 import toast from 'react-hot-toast'
 import { Loader2 } from 'lucide-react'
 
@@ -9,7 +10,7 @@ const MeterReading = () => {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [reading, setReading] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().substring(0, 10))
+  const [date, setDate] = useState(todayISO)
   const [previous, setPrevious] = useState(null)
   const [loadingPrev, setLoadingPrev] = useState(true)
 
@@ -35,7 +36,7 @@ const MeterReading = () => {
     if (isNaN(value) || value < 0) return toast.error('Reading must be a non-negative number')
 
     if (goesBackwards && !window.confirm(
-      `This reading (${value}) is lower than the last one (${previous.reading_value} on ${previous.reading_date}).\n\n` +
+      `This reading (${value}) is lower than the last one (${previous.reading_value} on ${dateLabel(previous.reading_date)}).\n\n` +
       `That period will be skipped when bills are generated. Only continue if the meter was actually reset or replaced.\n\nSave anyway?`
     )) return
 
@@ -74,7 +75,7 @@ const MeterReading = () => {
               <p className="text-sm text-text-secondary">
                 Last reading:{' '}
                 <span className="font-semibold text-text-primary">{previous.reading_value}</span>
-                {' '}on {new Date(previous.reading_date).toLocaleDateString('en-IN')}
+                {' '}on {dateLabel(previous.reading_date)}
               </p>
             ) : (
               <p className="text-sm text-text-secondary">
@@ -91,7 +92,7 @@ const MeterReading = () => {
             <input
               type="date"
               value={date}
-              max={new Date().toISOString().substring(0, 10)}
+              max={todayISO()}
               onChange={(e) => setDate(e.target.value)}
               className={inputCls}
             />

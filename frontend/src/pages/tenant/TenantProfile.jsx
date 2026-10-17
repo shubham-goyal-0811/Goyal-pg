@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { FileText, X, ExternalLink, Loader2, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { api } from '../../lib/api'
 import { dateLabel } from '../../lib/format'
+import { PanelSkeleton } from '../../components/Skeleton'
 
 /**
  * Own details, room, roommates, documents and verification status.
@@ -89,7 +90,7 @@ const TenantProfile = () => {
     )
   }
 
-  if (!data) return <p className="text-text-secondary">Loading…</p>
+  if (!data) return <PanelSkeleton count={3} />
 
   const { tenant, room, roommates, documents, police_verification: pv } = data
   const verified = pv?.status === 'verified'

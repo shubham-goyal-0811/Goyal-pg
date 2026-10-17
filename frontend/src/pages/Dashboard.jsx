@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import RoomCard from '../components/RoomCard'
+import { HeaderSkeleton, CardGridSkeleton } from '../components/Skeleton'
 import toast from 'react-hot-toast'
 import { Loader2, Receipt, AlertTriangle } from 'lucide-react'
 
@@ -121,10 +122,13 @@ const Dashboard = () => {
     }
   }
 
+  // Room cards in the same grid the real ones land in, so the page doesn't
+  // reflow when they arrive.
   if (loading) {
     return (
-      <div className="flex h-64 items-center justify-center text-text-secondary">
-        Loading dashboard...
+      <div>
+        <HeaderSkeleton />
+        <CardGridSkeleton count={6} lines={3} />
       </div>
     )
   }

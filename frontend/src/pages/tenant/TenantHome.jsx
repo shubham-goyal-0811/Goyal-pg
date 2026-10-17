@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ShieldCheck, ShieldAlert, DoorOpen } from 'lucide-react'
 import { api } from '../../lib/api'
 import { rupees, monthLabel, dateLabel } from '../../lib/format'
+import { PanelSkeleton } from '../../components/Skeleton'
 
 /**
  * The resident home screen.
@@ -38,7 +39,7 @@ const TenantHome = () => {
     )
   }
 
-  if (!data) return <p className="text-text-secondary">Loading…</p>
+  if (!data) return <PanelSkeleton count={3} />
 
   const { tenant, room, latest_bill: bill, outstanding, police_verification: pv } = data
   const owes = outstanding.count > 0

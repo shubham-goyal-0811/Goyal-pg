@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { dateLabel, monthLabel, rupees } from '../lib/format'
 import toast from 'react-hot-toast'
 import MeterModal from '../components/MeterModal'
-import { FileText, X, ExternalLink, Loader2, KeyRound, CircleCheck, CircleAlert } from 'lucide-react'
+import { HeaderSkeleton, PanelSkeleton } from '../components/Skeleton'
+import { FileText, X, ExternalLink, Loader2, KeyRound, CircleCheck, CircleAlert, IdCard } from 'lucide-react'
 
 // ── Doc Preview Modal ─────────────────────────────────────────────────────────
 const DocPreviewModal = ({ doc, tenantId, onClose }) => {
@@ -28,7 +30,7 @@ const DocPreviewModal = ({ doc, tenantId, onClose }) => {
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div>
             <h3 className="font-heading font-bold text-text-primary">{doc.doc_type?.replace(/_/g, ' ').toUpperCase()}</h3>
-            <p className="text-xs text-text-secondary mt-0.5">Uploaded on {new Date(doc.uploaded_at).toLocaleDateString('en-IN')}</p>
+            <p className="text-xs text-text-secondary mt-0.5">Uploaded on {dateLabel(doc.uploaded_at)}</p>
           </div>
           <div className="flex items-center gap-2">
             {url && (
@@ -61,6 +63,176 @@ const DocPreviewModal = ({ doc, tenantId, onClose }) => {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── ID Proof ──────────────────────────────────────────────────────────────────
+// The number here is captured by OCR off a photographed card, and OCR gets
+// digits wrong on a creased or badly lit Aadhaar. Until now there was no way to
+// correct one from the app at all — the field was read-only everywhere and only
+// ever written once, during onboarding. That made the police verification form
+// the place where the mistake was discovered.
+//
+// The API validates the pair (12 digits + Verhoeff checksum for Aadhaar) and
+// stores it normalized, so the check below is only there to catch the obvious
+// case before a round-trip. The server's answer is the one that counts.
+const ID_PROOF_TYPES = [
+  { value: 'aadhaar',         label: 'Aadhaar',          hint: '12 digits, as printed on the card' },
+  { value: 'pan',             label: 'PAN',              hint: 'e.g. ABCDE1234F' },
+  { value: 'passport',        label: 'Passport',         hint: '1 letter followed by 7 digits' },
+  { value: 'driving_license', label: 'Driving Licence',  hint: '8–20 letters or digits' },
+]
+
+// '234123412346' → '2341 2341 2346'. Grouped the way it is printed, because the
+// admin is reading it back off a card held next to the screen.
+const displayIdNumber = (type, number) => {
+  if (!number) return '—'
+  return type === 'aadhaar' ? number.replace(/(\d{4})(?=\d)/g, '$1 ') : number
+}
+
+const IdProof = ({ tenant, tenantId, onChange }) => {
+  const [editing, setEditing] = useState(false)
+  const [type, setType] = useState(tenant.id_proof_type || 'aadhaar')
+  const [number, setNumber] = useState(tenant.id_proof_number || '')
+  const [busy, setBusy] = useState(false)
+
+  const spec = ID_PROOF_TYPES.find(t => t.value === type) ?? ID_PROOF_TYPES[0]
+  const cleaned = number.replace(/[\s-]/g, '')
+  const tooShortAadhaar = type === 'aadhaar' && cleaned.length > 0 && cleaned.length !== 12
+
+  const open = () => {
+    setType(tenant.id_proof_type || 'aadhaar')
+    setNumber(tenant.id_proof_number || '')
+    setEditing(true)
+  }
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      const updated = await api.patch(`/tenants/${tenantId}`, {
+        id_proof_type: type,
+        id_proof_number: cleaned,
+      })
+      onChange({
+        id_proof_type: updated.id_proof_type,
+        id_proof_number: updated.id_proof_number,
+      })
+      setEditing(false)
+      toast.success('ID proof updated')
+    } catch (err) {
+      // Carries the real reason — wrong length, failed checksum, bad PAN shape.
+      toast.error(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const clear = async () => {
+    if (!window.confirm(`Remove the ID proof number on record for ${tenant.full_name}?`)) return
+    setBusy(true)
+    try {
+      await api.patch(`/tenants/${tenantId}`, { id_proof_number: '' })
+      onChange({ id_proof_type: null, id_proof_number: null })
+      setEditing(false)
+      toast.success('ID proof cleared')
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const inputCls = 'w-full h-[44px] px-3 bg-bg border border-border rounded-md text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent'
+
+  return (
+    <div className="bg-surface border border-border rounded-xl shadow-sm p-6 md:col-span-2">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="flex items-center gap-2">
+          <IdCard size={20} className="text-text-secondary" />
+          <h2 className="text-xl font-heading font-bold">ID Proof</h2>
+        </div>
+        {!editing && (
+          <button onClick={open} className="text-accent text-sm font-semibold hover:underline">
+            {tenant.id_proof_number ? 'Edit' : 'Add'}
+          </button>
+        )}
+      </div>
+      <p className="text-sm text-text-secondary mb-4">
+        Goes on the police verification form. Correct it here if the scan read it wrong.
+      </p>
+
+      {!editing ? (
+        <div className="p-4 bg-bg border border-border rounded-md">
+          {tenant.id_proof_number ? (
+            <>
+              <p className="text-xs text-text-secondary uppercase tracking-wide">
+                {ID_PROOF_TYPES.find(t => t.value === tenant.id_proof_type)?.label || tenant.id_proof_type}
+              </p>
+              <p className="font-medium text-text-primary mt-1 tabular-nums">
+                {displayIdNumber(tenant.id_proof_type, tenant.id_proof_number)}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-text-secondary">
+              No ID number on record. Add it before filing police verification.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3 max-w-md">
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">Document type</label>
+            <select value={type} onChange={e => setType(e.target.value)} className={inputCls}>
+              {ID_PROOF_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">Number</label>
+            <input
+              value={number}
+              onChange={e => setNumber(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && cleaned) save() }}
+              placeholder={spec.hint}
+              inputMode={type === 'aadhaar' ? 'numeric' : 'text'}
+              autoComplete="off"
+              className={`${inputCls} tabular-nums`}
+            />
+            <p className={`text-xs mt-1 ${tooShortAadhaar ? 'text-warning' : 'text-text-secondary'}`}>
+              {tooShortAadhaar ? `${cleaned.length} of 12 digits` : spec.hint}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3 pt-1">
+            <button
+              onClick={save}
+              disabled={busy || !cleaned}
+              className="h-[44px] px-5 bg-accent text-surface rounded-md font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {busy ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              disabled={busy}
+              className="h-[44px] px-4 border border-border rounded-md font-medium text-text-secondary hover:text-text-primary disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            {tenant.id_proof_number && (
+              <button
+                onClick={clear}
+                disabled={busy}
+                className="h-[44px] px-4 ml-auto text-text-secondary hover:text-warning font-medium disabled:opacity-40"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -239,7 +411,17 @@ const TenantDetail = () => {
     }
   }
 
-  if (loading) return <div className="flex justify-center p-8 text-text-secondary">Loading...</div>
+  if (loading) {
+    return (
+      <div>
+        <HeaderSkeleton />
+        <div className="grid md:grid-cols-2 gap-8">
+          <PanelSkeleton count={1} />
+          <PanelSkeleton count={1} />
+        </div>
+      </div>
+    )
+  }
   if (!tenant) return <div className="flex justify-center p-8 text-text-secondary">Tenant not found</div>
 
   // Rent, ID-proof numbers and document scans are admin-only. The API already
@@ -278,10 +460,8 @@ const TenantDetail = () => {
                 {tenant.rent_payments.map(payment => (
                   <div key={payment.id} className="flex justify-between items-center p-3 bg-bg rounded-md">
                     <div>
-                      <p className="font-medium">
-                        {new Date(payment.billing_month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-                      </p>
-                      <p className="text-sm text-text-secondary">₹{payment.total_amount}</p>
+                      <p className="font-medium">{monthLabel(payment.billing_month)}</p>
+                      <p className="text-sm text-text-secondary">{rupees(payment.total_amount)}</p>
                     </div>
                     {payment.status === 'paid' ? (
                       <span className="text-success font-semibold px-3 py-1 bg-success/10 rounded-full text-sm">Paid</span>
@@ -302,19 +482,30 @@ const TenantDetail = () => {
           <h2 className="text-xl font-heading font-bold mb-4">Profile</h2>
           <ul className="space-y-3 text-text-secondary">
             <li><span className="font-medium text-text-primary">Status:</span> {tenant.status?.toUpperCase()}</li>
-            <li><span className="font-medium text-text-primary">Check-in:</span> {tenant.check_in_date}</li>
+            <li><span className="font-medium text-text-primary">Check-in:</span> {dateLabel(tenant.check_in_date)}</li>
+            {tenant.check_out_date && (
+              <li><span className="font-medium text-text-primary">Check-out:</span> {dateLabel(tenant.check_out_date)}</li>
+            )}
             <li><span className="font-medium text-text-primary">AC Opted:</span> {tenant.ac_opted ? 'Yes' : 'No'}</li>
             <li><span className="font-medium text-text-primary">Vehicle:</span> {tenant.has_vehicle ? tenant.vehicle_number : 'No'}</li>
             <li><span className="font-medium text-text-primary">Parent's Contact:</span> {tenant.parent_contact || '—'}</li>
             {isAdmin && (
               <>
                 <li><span className="font-medium text-text-primary">Address:</span> {tenant.address || '—'}</li>
-                <li><span className="font-medium text-text-primary">ID Proof:</span> {tenant.id_proof_type?.toUpperCase() || '—'} — {tenant.id_proof_number || '—'}</li>
-                <li><span className="font-medium text-text-primary">Base Rent:</span> ₹{tenant.rooms?.seat_rent}</li>
+                <li><span className="font-medium text-text-primary">Base Rent:</span> {rupees(tenant.rooms?.seat_rent)}</li>
               </>
             )}
           </ul>
         </div>
+
+        {/* ID proof — admin only, and editable: OCR gets digits wrong. */}
+        {isAdmin && (
+          <IdProof
+            tenant={tenant}
+            tenantId={id}
+            onChange={(patch) => setTenant(prev => ({ ...prev, ...patch }))}
+          />
+        )}
 
         {/* Portal access — admin only */}
         {isAdmin && (
@@ -347,7 +538,7 @@ const TenantDetail = () => {
                         {doc.doc_type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                       </p>
                       <p className="text-xs text-text-secondary mt-1">
-                        {new Date(doc.uploaded_at).toLocaleDateString('en-IN')}
+                        {dateLabel(doc.uploaded_at)}
                       </p>
                     </div>
                     <span className="text-xs text-accent font-medium group-hover:underline">View →</span>

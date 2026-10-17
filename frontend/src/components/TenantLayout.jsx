@@ -1,6 +1,8 @@
+import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import useDocumentTitle from '../hooks/useDocumentTitle'
+import { prefetchRoutes } from '../lib/prefetch'
 import { Home, Receipt, User, LogOut } from 'lucide-react'
 
 /**
@@ -21,6 +23,14 @@ const TenantLayout = ({ children }) => {
   const location = useLocation()
 
   useDocumentTitle('Goyal PG')
+
+  // Only three screens here, and a resident checking their rent will tap at
+  // least two of them. Warm all three.
+  useEffect(() => prefetchRoutes([
+    ['tenant/home', () => import('../pages/tenant/TenantHome')],
+    ['tenant/rent', () => import('../pages/tenant/TenantRent')],
+    ['tenant/profile', () => import('../pages/tenant/TenantProfile')],
+  ]), [])
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
