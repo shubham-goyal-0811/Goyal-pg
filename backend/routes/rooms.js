@@ -5,6 +5,7 @@ const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { validateId } = require('../middleware/validate');
+const { invalidatePricing } = require('../services/publicPricing');
 
 // authMiddleware here also covers the nested meter-readings router below.
 router.use(authMiddleware);
@@ -86,6 +87,9 @@ router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
       .single();
 
     if (error) throw error;
+    // The public landing page quotes these prices from a cache; this is the
+    // only route that changes them, so it is the one that says so.
+    invalidatePricing();
     res.json(room);
   } catch (err) {
     res.status(500).json({ error: err.message });

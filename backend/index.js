@@ -79,6 +79,7 @@ const gateLogRouter = require('./routes/gateLog');
 const settingsRouter = require('./routes/settings');
 const documentsOcrRouter = require('./routes/documentsOcr');
 const enquiriesRouter = require('./routes/enquiries');
+const publicRouter = require('./routes/public');
 
 // Mount routers
 // /me first: it's what resolves a caller's role, so every other router's
@@ -97,6 +98,9 @@ app.use('/documents', documentsOcrRouter);
 // router applies authMiddleware per-route rather than with router.use(), which
 // is why this one looks different from every other mount here.
 app.use('/enquiries', enquiriesRouter);
+// No auth at all — read-only data for the landing page (room prices). Still
+// behind apiLimiter above, keyed by IP since there is no user.
+app.use('/public', publicRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
