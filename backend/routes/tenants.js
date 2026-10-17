@@ -112,7 +112,9 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
 // GET /tenants — list all active tenants (includes phone for search/disambiguation)
 router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
-    const { search } = req.query;
+    // ?status=all returns people who have moved out too — the Tenants page
+    // loads that once and searches it on the device as the admin types.
+    const { search, status } = req.query;
     let query = supabase
       .from('tenants')
       .select('id, full_name, phone_number, status, room_id, rooms(room_number)')
@@ -122,7 +124,7 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
       const safeSearch = sanitizeSearch(search);
       if (!safeSearch) return res.json([]); // empty after sanitizing — return nothing
       query = query.or(`full_name.ilike.%${safeSearch}%,phone_number.ilike.%${safeSearch}%`);
-    } else {
+    } else if (status !== 'all') {
       query = query.eq('status', 'active');
     }
 
