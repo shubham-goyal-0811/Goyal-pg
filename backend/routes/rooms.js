@@ -88,14 +88,28 @@ router.get('/:id', roleCheck(ADMIN_OR_GATEKEEPER), validateId(), async (req, res
 
 router.patch('/:id', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
   const { capacity, has_ac, seat_rent, ac_charge } = req.body;
+
+  // Renaming is safe: tenants, bills and meter readings point at the room's
+  // id, never its name. The app shows "Room " in front of the name itself, so
+  // a typed "Room 101" is stored as "101".
+  let room_number;
+  if (req.body.room_number !== undefined) {
+    room_number = String(req.body.room_number).trim().replace(/^room\s+/i, '');
+    if (!room_number) return res.status(400).json({ error: 'Room name cannot be empty' });
+    if (room_number.length > 20) return res.status(400).json({ error: 'Room name must be 20 characters or fewer' });
+  }
+
   try {
     const { data: room, error } = await supabase
       .from('rooms')
-      .update({ capacity, has_ac, seat_rent, ac_charge, updated_at: new Date().toISOString() })
+      .update({ room_number, capacity, has_ac, seat_rent, ac_charge, updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
       .select()
       .single();
 
+    if (error?.code === '23505') {
+      return res.status(409).json({ error: `There is already a Room ${room_number}` });
+    }
     if (error) throw error;
     // The public landing page quotes these prices from a cache; this is the
     // only route that changes them, so it is the one that says so.

@@ -7,7 +7,7 @@ import { isAdmin } from '../lib/roles'
 import { monthName, monthLabel, dayMonthLabel, rupees } from '../lib/format'
 import RoomCard from '../components/RoomCard'
 import { ListSkeleton, CardGridSkeleton } from '../components/Skeleton'
-import { Card, Button, ButtonLink, TextButton, Notice, ChevronRight, inputCls } from '../components/ui'
+import { Card, Button, ButtonLink, TextButton, Notice, Field, ChevronRight, inputCls } from '../components/ui'
 import toast from 'react-hot-toast'
 
 /**
@@ -28,11 +28,97 @@ const monthKey = (back) => {
 }
 const nameOf = (key) => monthName(`${key}-01`)
 
+// A typed reading has to sit between the room's readings either side of the
+// month's end. Checked here so the admin sees which room is wrong as they type;
+// the API checks again.
+const readingProblem = (room, typed) => {
+  if (typed === '') return null
+  const value = Number(typed)
+  if (!Number.isInteger(value)) return 'Enter the whole number on the meter.'
+  if (room.previous && value < room.previous.reading_value) {
+    return `Lower than the last reading (${room.previous.reading_value} on ${dayMonthLabel(room.previous.reading_date)}). Check for a typo.`
+  }
+  if (room.next && value > room.next.reading_value) {
+    return `Higher than the later reading (${room.next.reading_value} on ${dayMonthLabel(room.next.reading_date)}). Check for a typo.`
+  }
+  return null
+}
+
+/**
+ * Bills need every room's reading for the end of the month. Rooms missing one
+ * are asked for here, before the bills are made, rather than coming out with
+ * no electricity charge and a note to go back and fix it.
+ */
+const ReadingsStep = ({ month, rooms, busy, onSaved, onSkip, onBack }) => {
+  const [values, setValues] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  const problems = Object.fromEntries(rooms.map(r => [r.room_id, readingProblem(r, values[r.room_id] ?? '')]))
+  const complete = rooms.every(r => (values[r.room_id] ?? '') !== '' && !problems[r.room_id])
+
+  const save = async (e) => {
+    e.preventDefault()
+    if (!complete) return
+    setSaving(true)
+    try {
+      await api.post('/rent/readings', {
+        billing_month: month,
+        readings: rooms.map(r => ({ room_id: r.room_id, reading_value: Number(values[r.room_id]) })),
+      })
+      await onSaved()
+    } catch (err) {
+      toast.error(err.message || "Couldn't save the readings")
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card className="px-4 py-[18px]">
+      <form onSubmit={save} className="flex flex-col gap-[18px]">
+        <div className="flex flex-col gap-1.5">
+          <h2 className="font-heading font-bold text-[22px] leading-snug">End of {nameOf(month)} meter readings</h2>
+          <p className="text-text-secondary">
+            {rooms.length === 1 ? 'This room needs its' : `These ${rooms.length} rooms need their`} meter
+            reading for the end of {nameOf(month)} before the bills can include electricity.
+          </p>
+        </div>
+
+        {rooms.map(room => (
+          <Field
+            key={room.room_id}
+            label={`Room ${room.room_number}`}
+            error={problems[room.room_id]}
+            hint={room.previous
+              ? `Last reading ${room.previous.reading_value} on ${dayMonthLabel(room.previous.reading_date)}.`
+              : 'No reading yet. This one becomes the starting point.'}
+          >
+            <input
+              inputMode="numeric"
+              value={values[room.room_id] ?? ''}
+              onChange={(e) => setValues(v => ({ ...v, [room.room_id]: e.target.value.replace(/\D/g, '') }))}
+              className={inputCls(Boolean(problems[room.room_id]), 'tabular-nums')}
+            />
+          </Field>
+        ))}
+
+        <Button type="submit" variant="primary" disabled={saving || busy || !complete}>
+          {saving ? 'Saving...' : `Save readings and make ${nameOf(month)} bills`}
+        </Button>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          <TextButton onClick={onBack} disabled={saving || busy}>Back</TextButton>
+          <TextButton onClick={onSkip} disabled={saving || busy}>Make bills without these readings</TextButton>
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 const BillsForm = ({ due, onDone }) => {
   const [month, setMonth] = useState(() => monthKey(1))
   const [running, setRunning] = useState(false)
+  const [needed, setNeeded] = useState(null)
 
-  const run = async () => {
+  const generate = async () => {
     setRunning(true)
     try {
       const res = await api.post('/rent/generate', { billing_month: month })
@@ -41,9 +127,37 @@ const BillsForm = ({ due, onDone }) => {
       // refetches the room grid while it is on screen.
     } catch (err) {
       toast.error(err.message || "Couldn't make the bills")
-    } finally {
       setRunning(false)
     }
+  }
+
+  const start = async () => {
+    setRunning(true)
+    try {
+      const rooms = await api.get(`/rent/readings-needed?billing_month=${month}`, { fresh: true })
+      if (rooms.length > 0) {
+        setNeeded(rooms)
+        setRunning(false)
+      } else {
+        await generate()
+      }
+    } catch (err) {
+      toast.error(err.message || "Couldn't check the meter readings")
+      setRunning(false)
+    }
+  }
+
+  if (needed) {
+    return (
+      <ReadingsStep
+        month={month}
+        rooms={needed}
+        busy={running}
+        onSaved={generate}
+        onSkip={generate}
+        onBack={() => setNeeded(null)}
+      />
+    )
   }
 
   return (
@@ -52,7 +166,7 @@ const BillsForm = ({ due, onDone }) => {
         {due ? `${nameOf(month)} bills aren't made yet` : 'Make bills'}
       </h2>
       <p className="text-text-secondary -mt-1.5">
-        Make them after all rooms have a meter reading for the end of {nameOf(month)}.
+        Each room needs a meter reading for the end of {nameOf(month)}. You will be asked for any that are missing.
       </p>
       <label className="flex flex-col gap-1.5">
         <span className="font-heading font-semibold text-[15px]">Month</span>
@@ -62,7 +176,7 @@ const BillsForm = ({ due, onDone }) => {
           ))}
         </select>
       </label>
-      <Button variant="primary" onClick={run} disabled={running}>
+      <Button variant="primary" onClick={start} disabled={running}>
         {running ? 'Making bills...' : `Make ${nameOf(month)} bills`}
       </Button>
       <p className="text-sm text-text-secondary">Safe to run again. Bills already paid are not changed.</p>
@@ -74,6 +188,7 @@ const BillsResult = ({ result, rooms }) => {
   const roomNo = (id) => rooms.find(r => r.id === id)?.room_number ?? id
   const missing = result.warnings ?? []
   const name = nameOf(result.month)
+  const paid = (result.skipped ?? []).filter(s => s.reason === 'already_paid').length
 
   return (
     <Card className="px-4 py-[18px] flex flex-col gap-3">
@@ -82,9 +197,15 @@ const BillsResult = ({ result, rooms }) => {
           ? `${name} bills made for ${result.generated} tenant${result.generated === 1 ? '' : 's'}`
           : `No new ${name} bills to make`}
       </h2>
-      {result.skipped?.length > 0 && (
+      {paid > 0 && (
         <p className="text-text-secondary -mt-1">
-          {result.skipped.length} already paid, left as they were.
+          {paid} already paid, left as they were.
+        </p>
+      )}
+      {result.removed > 0 && (
+        <p className="text-text-secondary -mt-1">
+          Removed {result.removed} {name} bill{result.removed === 1 ? '' : 's'} made by mistake
+          for tenants who weren't living here in {name}.
         </p>
       )}
       {missing.length > 0 && (

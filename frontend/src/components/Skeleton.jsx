@@ -140,11 +140,8 @@ export const AppSkeleton = ({ path }) => {
           </div>
         </div>
         <div className="min-w-0">
-          <div className="md:hidden h-[60px] bg-surface border-b border-border flex items-center gap-3 px-3">
-            <Skeleton className="h-11 w-[92px] rounded-lg" />
-            <Skeleton className="h-5 w-24" />
-          </div>
-          <div className="px-4 pt-5 md:px-10 md:py-8 max-w-[1000px]">
+          <Skeleton className="md:hidden fixed top-[calc(1rem+env(safe-area-inset-top))] left-4 h-10 w-10 rounded-md" />
+          <div className="px-4 pt-[calc(4rem+env(safe-area-inset-top))] md:px-10 md:py-8 max-w-[1000px]">
             <TitleSkeleton />
             <PanelSkeleton count={3} />
           </div>

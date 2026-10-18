@@ -23,7 +23,7 @@ const STEPS = [
   {
     title: 'Welcome to the office app',
     body: [
-      'Everything you need to run the PG is on six screens. On a phone, press "Menu" at the top to see them. On a computer they are down the left side.',
+      'Everything you need to run the PG is on six screens. On a phone, press the menu button (three lines) at the top left to see them. On a computer they are down the left side.',
       'This walkthrough takes about a minute. You can skip it — "Show me how it works" in the menu brings it back any time.',
     ],
   },

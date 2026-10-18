@@ -133,5 +133,6 @@ const calculateElectricityCharges = async (roomId, billingMonthString) => {
 
 module.exports = {
   calculateElectricityCharges,
-  invalidateRateCache
+  invalidateRateCache,
+  firstOfNextMonth
 };

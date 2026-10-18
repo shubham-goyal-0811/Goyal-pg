@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { keepPreviousData } from '@tanstack/react-query'
 import { useApiQuery, prefetchApi } from '../lib/queries'
+import { searchTenants } from '../lib/search'
 import { Search } from 'lucide-react'
 import { TitleSkeleton, ListSkeleton } from '../components/Skeleton'
 import { Card, PageTitle, ChevronRight } from '../components/ui'
@@ -9,28 +9,17 @@ import { Card, PageTitle, ChevronRight } from '../components/ui'
 const Tenants = () => {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  // The term actually sent to the API. Trails `query` by 400ms while typing.
-  const [term, setTerm] = useState('')
 
-  // The unfiltered list is cached, so clearing the box shouldn't wait 400ms.
-  // Only real search terms need debouncing.
-  useEffect(() => {
-    const q = query.trim()
-    if (!q) { setTerm(''); return }
-    const timer = setTimeout(() => setTerm(q), 400)
-    return () => clearTimeout(timer)
-  }, [query])
-
-  const { data, isPending, isError, error, isFetching } = useApiQuery(
-    term ? `/tenants?search=${encodeURIComponent(term)}` : '/tenants',
-    // Keep the last results on screen while the next search is in flight,
-    // rather than blanking the list on every keystroke.
-    { placeholderData: keepPreviousData },
-  )
-  const tenants = data ?? []
-  // Typing ahead of the debounce counts as searching too, so the hint appears
-  // on the first keystroke rather than 400ms later.
-  const searching = query.trim() !== term || (isFetching && !!term)
+  // Everyone, moved out included, loaded once and searched here on every
+  // keystroke — a PG's whole history is a few hundred rows, and filtering them
+  // on the phone beats waiting on the network for each letter.
+  const { data, isPending, isError, error } = useApiQuery('/tenants?status=all')
+  const searching = query.trim() !== ''
+  const tenants = useMemo(() => {
+    const all = data ?? []
+    // Without a search, only people living here.
+    return searching ? searchTenants(all, query) : all.filter(t => t.status === 'active')
+  }, [data, query, searching])
 
   // Opening a tenant is the next thing anyone does here. Start loading their
   // record the moment a pointer lands on the row — hover with a mouse, the
@@ -47,20 +36,17 @@ const Tenants = () => {
     )
   }
 
-  // Without a search the API returns only people living here; a search
-  // covers people who have moved out too.
+  // A search covers people who have moved out too.
   const countLine = searching
-    ? 'Searching...'
-    : query.trim()
-      ? `${tenants.length} found`
-      : `${tenants.length} ${tenants.length === 1 ? 'person' : 'people'} living here`
+    ? `${tenants.length} found`
+    : `${tenants.length} ${tenants.length === 1 ? 'person' : 'people'} living here`
 
   return (
     <div className="flex flex-col gap-3.5 max-w-2xl">
       <PageTitle>Tenants</PageTitle>
 
       <label className="flex flex-col gap-1.5">
-        <span className="font-heading font-semibold text-[15px] px-1">Search by name or mobile</span>
+        <span className="font-heading font-semibold text-[15px] px-1">Search by name, mobile or room</span>
         <span className="relative block">
           <Search size={20} aria-hidden="true" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary" />
           <input
@@ -76,7 +62,7 @@ const Tenants = () => {
       <p className="text-[15px] text-text-secondary px-1" aria-live="polite">{countLine}</p>
 
       {isError && (
-        <p className="px-1">{term ? "The search didn't work" : "Couldn't load tenants"}: {error.message}</p>
+        <p className="px-1">Couldn't load tenants: {error.message}</p>
       )}
 
       <Card className="overflow-hidden">
@@ -99,7 +85,7 @@ const Tenants = () => {
             <ChevronRight />
           </button>
         ))}
-        {tenants.length === 0 && !searching && (
+        {tenants.length === 0 && !isError && (
           <p className="px-4 py-7 text-center text-text-secondary">
             {query.trim() ? `No tenant matches "${query.trim()}".` : 'Nobody is living here yet.'}
           </p>

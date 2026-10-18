@@ -95,7 +95,8 @@ const cacheBust = (...prefixes) => {
 
 // Derive which caches a mutating call should invalidate
 const bustRelated = (endpoint) => {
-  if (endpoint.startsWith('/rooms'))               cacheBust('/rooms')
+  // '/tenants' too: tenant lists carry the room's name, which Settings can change.
+  if (endpoint.startsWith('/rooms'))               cacheBust('/rooms', '/tenants')
   if (endpoint.startsWith('/settings'))            cacheBust('/settings')
   if (endpoint.startsWith('/tenants'))             cacheBust('/tenants', '/police-verification', '/rooms')
   if (endpoint.startsWith('/gate-log'))            cacheBust('/gate-log')

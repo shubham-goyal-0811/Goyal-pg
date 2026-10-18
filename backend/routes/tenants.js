@@ -5,7 +5,7 @@ const authMiddleware = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const { ROLES, ADMIN_ONLY, ADMIN_OR_GATEKEEPER } = require('../config/roles');
 const { generateRent, isBillingMonth, TENANT_BILLING_SELECT } = require('../services/rent');
-const { rejectionIfBackwards } = require('../services/meterReadings');
+const { rejectionIfBackwards, tenantsPresentOn } = require('../services/meterReadings');
 const { validateId, sanitizeSearch, normalizeEmail, normalizePhone, normalizeIdProof } = require('../middleware/validate');
 
 const { invalidateRole } = roleCheck;
@@ -112,7 +112,9 @@ router.post('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
 // GET /tenants — list all active tenants (includes phone for search/disambiguation)
 router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
   try {
-    const { search } = req.query;
+    // ?status=all returns people who have moved out too — the Tenants page
+    // loads that once and searches it on the device as the admin types.
+    const { search, status } = req.query;
     let query = supabase
       .from('tenants')
       .select('id, full_name, phone_number, status, room_id, rooms(room_number)')
@@ -122,7 +124,7 @@ router.get('/', roleCheck(ADMIN_OR_GATEKEEPER), async (req, res) => {
       const safeSearch = sanitizeSearch(search);
       if (!safeSearch) return res.json([]); // empty after sanitizing — return nothing
       query = query.or(`full_name.ilike.%${safeSearch}%,phone_number.ilike.%${safeSearch}%`);
-    } else {
+    } else if (status !== 'all') {
       query = query.eq('status', 'active');
     }
 
@@ -333,30 +335,59 @@ router.post('/:id/revoke-portal', roleCheck(ADMIN_ONLY), validateId(), async (re
 });
 
 // POST /tenants/:id/checkout
+// Body: { meter_reading, allow_lower? }
+// The room's meter reading is taken as part of moving out, and recorded BEFORE
+// the tenant is marked vacated — the mirror of check-in. The reading closes the
+// period the leaving tenant shares, so it has to list them. Taking it after
+// they were vacated (as this used to, on a separate page) left them out, and
+// their last stretch of electricity went to the roommates.
 router.post('/:id/checkout', roleCheck(ADMIN_ONLY), validateId(), async (req, res) => {
+  const { meter_reading, allow_lower } = req.body || {};
+  const reading = Number(meter_reading);
+  if (meter_reading === '' || meter_reading == null || !Number.isInteger(reading) || reading < 0) {
+    return res.status(400).json({ error: 'meter_reading must be a whole number, 0 or more' });
+  }
+
   try {
     const tenantId = req.params.id;
     const today = new Date().toISOString().substring(0, 10);
 
-    const { data: tenant, error } = await supabase
+    const { data: tenant, error: readErr } = await supabase
+      .from('tenants')
+      .select('room_id, status')
+      .eq('id', tenantId)
+      .single();
+    if (readErr || !tenant) return res.status(404).json({ error: 'Tenant not found' });
+    if (tenant.status === 'vacated') return res.status(400).json({ error: 'This tenant has already moved out' });
+
+    if (!allow_lower) {
+      const rejection = await rejectionIfBackwards(tenant.room_id, today, reading);
+      if (rejection) return res.status(400).json({ error: rejection, code: 'READING_WENT_BACKWARDS' });
+    }
+
+    const { error: insertErr } = await supabase
+      .from('meter_readings')
+      .insert([{
+        room_id: tenant.room_id,
+        reading_date: today,
+        reading_value: reading,
+        active_tenant_ids: await tenantsPresentOn(tenant.room_id, today),
+        triggered_by: 'checkout'
+      }]);
+    if (insertErr) throw insertErr;
+
+    const { error } = await supabase
       .from('tenants')
       .update({
         status: 'vacated',
         check_out_date: today,
         updated_at: new Date().toISOString()
       })
-      .eq('id', tenantId)
-      .select('room_id')
-      .single();
+      .eq('id', tenantId);
 
     if (error) throw error;
 
-    // Frontend MUST show blocking modal using this flag
-    res.json({
-      success: true,
-      requiresMeterReading: true,
-      roomId: tenant.room_id
-    });
+    res.json({ success: true, roomId: tenant.room_id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -385,9 +416,14 @@ router.post('/:id/generate-rent', roleCheck(ADMIN_ONLY), validateId(), async (re
     const result = await generateRent([tenant], billing_month);
 
     if (result.generated === 0) {
-      const why = result.skipped[0]?.reason === 'already_paid'
+      const reason = result.skipped[0]?.reason;
+      const why = reason === 'already_paid'
         ? 'This month is already marked paid for this tenant.'
-        : 'Nothing to generate.';
+        : reason === 'not_moved_in'
+          ? 'This tenant moved in after that month ended.'
+          : reason === 'moved_out'
+            ? 'This tenant moved out before that month started.'
+            : 'Nothing to generate.';
       return res.status(409).json({ error: why, ...result });
     }
 
